@@ -36,7 +36,9 @@ export default function CalendarPage() {
 
   // Scroll cuando los datos están listos
   useEffect(() => {
-    if (loading || scrolledRef.current) return
+    // Esperar a que haya meses reales en el DOM; si months.length === 0 el
+    // contenedor no tiene suficiente altura para llegar a la posición guardada
+    if (loading || scrolledRef.current || months.length === 0) return
 
     const container = scrollRef?.current
     if (!container) return
@@ -62,7 +64,7 @@ export default function CalendarPage() {
     if (!el) return
     container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
     scrolledRef.current = true
-  }, [loading, scrollToDate, scrollRef])
+  }, [loading, months.length, scrollToDate, scrollRef])
 
   function scrollToToday() {
     const container = scrollRef?.current
