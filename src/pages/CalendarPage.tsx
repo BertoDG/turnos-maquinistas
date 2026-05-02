@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCalendar } from '@/hooks/useCalendar'
@@ -6,79 +6,70 @@ import { useMainScroll } from '@/components/layout/Layout'
 import MonthCalendar from '@/components/calendar/MonthCalendar'
 import { Loader2, AlertCircle, CalendarDays } from 'lucide-react'
 
-// Devuelve la posición scrollTop que coloca `el` al inicio del contenedor
-function getScrollTopFor(el: HTMLElement, container: HTMLElement): number {
+/** Posición scrollTop que deja `el` al inicio del área visible de `container` */
+function topOf(el: HTMLElement, container: HTMLElement): number {
   return el.getBoundingClientRect().top
     - container.getBoundingClientRect().top
     + container.scrollTop
 }
 
 export default function CalendarPage() {
-  const { profile } = useAuth()
+  const { profile }    = useAuth()
   const { maquinistaId } = useParams()
-  const [searchParams] = useSearchParams()
-  const mainRef = useMainScroll()
+  const [searchParams]   = useSearchParams()
+  const scrollRef        = useMainScroll()
 
-  const targetId = maquinistaId || profile?.id
-
-  // ?scrollTo=YYYY-MM-DD → posicionarse en ese mes al volver del detalle de día
+  const targetId    = maquinistaId || profile?.id
   const scrollToDate = searchParams.get('scrollTo')
 
   const { months, loading, error, loadMorePast, loadMoreFuture } = useCalendar({
     maquinistaId: targetId,
   })
 
-  // Refs por mes: clave "YYYY-M" (año + mes 0-indexed)
   const monthRefs   = useRef<Map<string, HTMLDivElement>>(new Map())
   const scrolledRef = useRef(false)
 
   const now = new Date()
-
-  // Mes destino: el del día consultado, o el mes actual
   const targetYear  = scrollToDate ? parseInt(scrollToDate.slice(0, 4), 10) : now.getFullYear()
   const targetMonth = scrollToDate ? parseInt(scrollToDate.slice(5, 7), 10) - 1 : now.getMonth()
 
-  // Si Layout ya ha restaurado la posición guardada (scrollToDate presente pero
-  // sessionStorage ya fue consumido), no hace falta volver a hacer scroll.
-  // Usamos useLayoutEffect para ejecutar antes del primer paint visible.
-  useLayoutEffect(() => {
-    if (loading || scrolledRef.current) return
+  // Resetear cuando cambia el parámetro de fecha (navegación entre días)
+  useEffect(() => {
+    scrolledRef.current = false
+  }, [scrollToDate])
 
-    const container = mainRef?.current
+  // Scroll al mes correcto cuando los datos están listos
+  useEffect(() => {
+    if (loading || scrolledRef.current) return
+    const container = scrollRef?.current
     if (!container) return
 
     const key = `${targetYear}-${targetMonth}`
     const el  = monthRefs.current.get(key)
     if (!el) return
 
-    const top = getScrollTopFor(el, container)
+    const top = topOf(el, container)
 
     if (scrollToDate) {
-      // Volviendo del detalle de día: posición instantánea, sin animación
+      // Volviendo del detalle: sin animación
       container.scrollTop = top
     } else {
-      // Carga inicial: scroll suave al mes actual
+      // Carga inicial o botón Hoy: suave
       container.scrollTo({ top, behavior: 'smooth' })
     }
 
     scrolledRef.current = true
-  }, [loading, targetYear, targetMonth, scrollToDate, mainRef])
+  }, [loading, targetYear, targetMonth, scrollToDate, scrollRef])
 
-  // Botón "Hoy": scroll directo sobre el contenedor, nunca scrollIntoView
   function scrollToToday() {
-    const container = mainRef?.current
+    const container = scrollRef?.current
     if (!container) return
     const key = `${now.getFullYear()}-${now.getMonth()}`
     const el  = monthRefs.current.get(key)
     if (!el) return
-    container.scrollTo({ top: getScrollTopFor(el, container), behavior: 'smooth' })
+    container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
+    scrolledRef.current = true
   }
-
-  // Cuando el usuario navega entre días dentro del detalle y vuelve,
-  // el scrollToDate puede cambiar sin desmontar el componente → resetear el flag
-  useEffect(() => {
-    scrolledRef.current = false
-  }, [scrollToDate])
 
   if (loading) {
     return (
@@ -114,7 +105,6 @@ export default function CalendarPage() {
   return (
     <div className="flex flex-col bg-gray-50 relative">
 
-      {/* Cargar meses pasados */}
       <button
         onClick={loadMorePast}
         className="mx-4 mt-3 py-2.5 text-sm text-gray-500 bg-white border border-gray-200
@@ -123,7 +113,6 @@ export default function CalendarPage() {
         ↑ Ver meses anteriores
       </button>
 
-      {/* Meses */}
       {months.map((month) => {
         const key = `${month.year}-${month.month}`
         return (
@@ -140,7 +129,6 @@ export default function CalendarPage() {
         )
       })}
 
-      {/* Cargar meses futuros */}
       <button
         onClick={loadMoreFuture}
         className="mx-4 mb-24 py-2.5 text-sm text-gray-500 bg-white border border-gray-200
@@ -149,7 +137,7 @@ export default function CalendarPage() {
         ↓ Ver más meses
       </button>
 
-      {/* ── Botón flotante "Hoy" ─────────────────────────────────── */}
+      {/* Botón flotante "Hoy" */}
       <button
         onClick={scrollToToday}
         className="fixed bottom-24 right-4 z-50
