@@ -30,19 +30,9 @@ export default function Layout() {
       sessionStorage.setItem(SCROLL_KEY, String(mainRef.current?.scrollTop ?? 0))
     }
 
-    // Llegando al calendario
-    if (next === '/') {
-      const saved = sessionStorage.getItem(SCROLL_KEY)
-      if (saved !== null) {
-        sessionStorage.removeItem(SCROLL_KEY)
-        // Esperar a que el componente renderice sus meses antes de restaurar
-        const top = parseInt(saved, 10)
-        setTimeout(() => {
-          if (mainRef.current) mainRef.current.scrollTop = top
-        }, 0)
-      }
-      return
-    }
+    // Llegando al calendario → CalendarPage gestiona la restauración
+    // (los datos son asíncronos; el scroll debe aplicarse tras el render)
+    if (next === '/') return
 
     // Cualquier otra ruta: ir al inicio
     if (mainRef.current) mainRef.current.scrollTop = 0

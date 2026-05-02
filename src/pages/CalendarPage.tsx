@@ -6,6 +6,9 @@ import { useMainScroll } from '@/components/layout/Layout'
 import MonthCalendar from '@/components/calendar/MonthCalendar'
 import { Loader2, AlertCircle, CalendarDays } from 'lucide-react'
 
+// Misma clave que Layout.tsx (debe coincidir)
+const SCROLL_KEY = 'calendar_scroll_top'
+
 /** Posición scrollTop que deja `el` al inicio del área visible de `container` */
 function topOf(el: HTMLElement, container: HTMLElement): number {
   return el.getBoundingClientRect().top
@@ -30,36 +33,36 @@ export default function CalendarPage() {
   const scrolledRef = useRef(false)
 
   const now = new Date()
-  const targetYear  = scrollToDate ? parseInt(scrollToDate.slice(0, 4), 10) : now.getFullYear()
-  const targetMonth = scrollToDate ? parseInt(scrollToDate.slice(5, 7), 10) - 1 : now.getMonth()
 
-  // Resetear cuando cambia el parámetro de fecha (navegación entre días)
-  useEffect(() => {
-    scrolledRef.current = false
-  }, [scrollToDate])
-
-  // Scroll al mes correcto cuando los datos están listos
+  // Scroll cuando los datos están listos
   useEffect(() => {
     if (loading || scrolledRef.current) return
-
-    if (scrollToDate) {
-      // Volviendo del detalle: Layout.tsx ya restauró la posición exacta
-      // desde sessionStorage — no interferir con el scroll
-      scrolledRef.current = true
-      return
-    }
 
     const container = scrollRef?.current
     if (!container) return
 
-    const key = `${targetYear}-${targetMonth}`
-    const el  = monthRefs.current.get(key)
-    if (!el) return
+    // Hay posición guardada (volviendo desde detalle del día u otra subpágina)
+    const saved = sessionStorage.getItem(SCROLL_KEY)
+    if (saved !== null) {
+      sessionStorage.removeItem(SCROLL_KEY)
+      container.scrollTop = parseInt(saved, 10)
+      scrolledRef.current = true
+      return
+    }
+
+    if (scrollToDate) {
+      // scrollToDate presente pero sin posición guardada: nada que hacer
+      scrolledRef.current = true
+      return
+    }
 
     // Carga inicial: scroll suave al mes actual
+    const key = `${now.getFullYear()}-${now.getMonth()}`
+    const el  = monthRefs.current.get(key)
+    if (!el) return
     container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
     scrolledRef.current = true
-  }, [loading, targetYear, targetMonth, scrollToDate, scrollRef])
+  }, [loading, scrollToDate, scrollRef])
 
   function scrollToToday() {
     const container = scrollRef?.current
