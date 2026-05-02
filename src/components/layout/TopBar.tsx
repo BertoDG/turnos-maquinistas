@@ -188,8 +188,12 @@ export default function TopBar() {
         </div>
       </div>
 
-      {/* Franja de cuenta atrás — solo en la pantalla principal */}
-      {isRoot && profile && <TurnoCountdown userId={profile.id} />}
+      {/* Franja de cuenta atrás — siempre montada para no perder estado del hook */}
+      {profile && (
+        <div style={{ display: isRoot ? undefined : 'none' }}>
+          <TurnoCountdown userId={profile.id} />
+        </div>
+      )}
     </header>
   )
 }
