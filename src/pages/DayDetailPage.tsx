@@ -21,7 +21,6 @@ interface DayData {
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + days)
-  // Usar métodos locales para evitar el desfase UTC en zonas +HH
   return [
     d.getFullYear(),
     String(d.getMonth() + 1).padStart(2, '0'),
@@ -31,13 +30,6 @@ function addDays(dateStr: string, days: number): string {
 
 /**
  * Decodifica turnos de guardia 7xxx / 8xxx que no están en el catálogo.
- * Formato: [7|8][HH][D]
- *   7 = empieza en punto  · 8 = empieza y media
- *   HH = hora de inicio (2 dígitos, formato 24h)
- *   D  = duración en horas (1 dígito)
- * Ejemplos:
- *   7097 → 09:00 – 16:00  (7 horas desde las 9 en punto)
- *   8104 → 10:30 – 14:30  (4 horas desde las 10 y media)
  */
 function decodeGuardiaVirtual(numero: string): { horaInicio: string; horaFin: string } | null {
   if (!/^[78]\d{3}$/.test(numero)) return null
@@ -80,7 +72,6 @@ export default function DayDetailPage() {
         .eq('fecha', dateStr!)
         .single()
 
-      // Cargar turno original si este día tiene un cambio aplicado
       if (asig?.turno_id_original) {
         const { data: turnoOrig } = await supabase
           .from('turnos')
@@ -113,7 +104,15 @@ export default function DayDetailPage() {
     return () => { cancelled = true }
   }, [dateStr, maquinistaId])
 
-  // ── Navegación entre días ──────────────────────────────────
+  function handleClose() {
+    const maqParam = searchParams.get('maquinistaId')
+    if (maqParam) {
+      navigate(`/companeros/${maqParam}`, { replace: true })
+    } else {
+      navigate('/', { replace: true })
+    }
+  }
+
   function goDay(offset: number) {
     if (!dateStr) return
     const next = addDays(dateStr, offset)
@@ -132,7 +131,6 @@ export default function DayDetailPage() {
     setReverting(false)
     setShowRevertConfirm(false)
     if (!error) {
-      // Recargar el día
       if (dateStr && maquinistaId) {
         const { data: asig } = await supabase
           .from('asignaciones')
@@ -161,361 +159,352 @@ export default function DayDetailPage() {
   const isGuardia  = turno?.tipo === 'guardia'
   const isRest     = isDescanso || isVacaciones
 
-  // Guardias 7xxx/8xxx: decodificadas del código, no están en el catálogo
   const guardiaVirtual = turno && data.servicios.length === 0
     ? decodeGuardiaVirtual(turno.numero)
     : null
 
-  /** Recorta un valor time de Supabase ("HH:MM:SS" o "HH:MM") a "HH:MM". */
   const hhmm = (t: string | null | undefined): string | null => t?.slice(0, 5) ?? null
 
   const formattedDate  = dateStr ? formatDate(dateStr, "EEEE, d 'de' MMMM") : ''
   const formattedYear  = dateStr ? formatDate(dateStr, 'yyyy') : ''
 
-  // Colores del hero: misma paleta que la celda del calendario
   const { bg, turnoText: textCol } = turno
     ? computeTurnoColors(turno, prefs, guardiaVirtual?.horaInicio ?? null)
     : { bg: '#F3F4F6', turnoText: '#111827' }
 
-  // ── Loading ────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="w-7 h-7 text-red-500 animate-spin" />
-      </div>
-    )
-  }
-
+  // ── Overlay full-screen ─────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col min-h-full">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white animate-slide-up"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
 
-      {/* ── Hero del turno ─────────────────────────────────────── */}
-      <div style={{ backgroundColor: bg }} className="px-5 pt-5 pb-10 relative overflow-hidden">
-        {/* Círculos decorativos */}
-        <div className="absolute top-0 right-0 w-40 h-40 rounded-full opacity-10 -translate-y-1/2 translate-x-1/2"
-          style={{ backgroundColor: textCol }} />
-        <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full opacity-10 translate-y-1/2 -translate-x-1/2"
-          style={{ backgroundColor: textCol }} />
-
-        {/* Fecha */}
-        <p style={{ color: textCol }} className="text-sm font-medium opacity-70 capitalize mb-4">
-          {formattedDate} · {formattedYear}
-        </p>
-
-        {/* Icono + número de turno */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0"
-            style={{ backgroundColor: `${textCol}22` }}>
-            {isVacaciones ? (
-              <Umbrella className="w-7 h-7" style={{ color: textCol }} />
-            ) : isDescanso ? (
-              <Bed className="w-7 h-7" style={{ color: textCol }} />
-            ) : isEspecial ? (
-              <Clock className="w-7 h-7" style={{ color: textCol }} />
-            ) : (isGuardia || guardiaVirtual) ? (
-              <Shield className="w-7 h-7" style={{ color: textCol }} />
-            ) : (
-              <Train className="w-7 h-7" style={{ color: textCol }} />
-            )}
-          </div>
-
-          <div>
-            {!data.asignacion ? (
-              <h2 style={{ color: textCol }} className="text-2xl font-black leading-none opacity-40">
-                Sin turno
-              </h2>
-            ) : (
-              <>
-                <h2 style={{ color: textCol }} className="text-4xl font-black leading-none tracking-tight">
-                  {turno?.numero ?? '—'}
-                </h2>
-                {(turno?.descripcion || guardiaVirtual) && (
-                  <p style={{ color: textCol }} className="text-sm opacity-70 mt-1">
-                    {turno?.descripcion ?? 'Guardia en ruta habitual'}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Stats (duración / km) */}
-        {turno && !isRest && (turno.duracion_minutos || turno.km_totales) && (
-          <div className="flex gap-4">
-            {turno.duracion_minutos && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" style={{ color: textCol, opacity: 0.6 }} />
-                <span style={{ color: textCol }} className="text-sm font-semibold opacity-90">
-                  {formatDuration(turno.duracion_minutos)}
-                </span>
-              </div>
-            )}
-            {turno.km_totales && (
-              <div className="flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5" style={{ color: textCol, opacity: 0.6 }} />
-                <span style={{ color: textCol }} className="text-sm font-semibold opacity-90">
-                  {turno.km_totales} km
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-2 px-4 h-14 bg-white border-b border-gray-100 shadow-sm">
+        <button
+          onClick={handleClose}
+          className="p-2 -ml-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+        >
+          <ChevronLeft className="w-5 h-5 text-gray-700" />
+        </button>
+        <span className="text-base font-semibold text-gray-900">Detalle del día</span>
       </div>
 
-      {/* ── Contenido principal ────────────────────────────────── */}
-      <div className="flex-1 bg-gray-50 -mt-5 rounded-t-3xl px-4 pt-5 pb-8 flex flex-col gap-3">
+      {/* ── Contenido scrollable ───────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto bg-gray-50">
+        {loading ? (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="w-7 h-7 text-red-500 animate-spin" />
+          </div>
+        ) : (
+          <div className="flex flex-col">
 
-        {/* Día de descanso / vacaciones */}
-        {isRest && (
-          <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: `${bg}` }}>
-              {isVacaciones
-                ? <Umbrella className="w-6 h-6" style={{ color: textCol }} />
-                : <Bed       className="w-6 h-6" style={{ color: textCol }} />}
-            </div>
-            <div>
-              <p className="font-bold text-gray-900">
-                {isVacaciones
-                  ? (turno?.descripcion ?? 'Día de vacaciones')
-                  : (turno?.descripcion ?? 'Día de descanso')}
+            {/* ── Hero del turno ─────────────────────────────────── */}
+            <div style={{ backgroundColor: bg }} className="px-5 pt-5 pb-10 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-40 h-40 rounded-full opacity-10 -translate-y-1/2 translate-x-1/2"
+                style={{ backgroundColor: textCol }} />
+              <div className="absolute bottom-0 left-0 w-24 h-24 rounded-full opacity-10 translate-y-1/2 -translate-x-1/2"
+                style={{ backgroundColor: textCol }} />
+
+              <p style={{ color: textCol }} className="text-sm font-medium opacity-70 capitalize mb-4">
+                {formattedDate} · {formattedYear}
               </p>
-              <p className="text-sm text-gray-500 mt-0.5">No hay servicios programados</p>
-            </div>
-          </div>
-        )}
 
-        {/* Turno especial: licencias, médico, formación, reservas, etc. */}
-        {isEspecial && (
-          <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: bg }}>
-              <Clock className="w-6 h-6" style={{ color: textCol }} />
-            </div>
-            <div>
-              <p className="font-bold text-gray-900">{turno?.descripcion ?? turno?.numero}</p>
-              <p className="text-sm text-gray-500 mt-0.5">Sin servicios de conducción</p>
-            </div>
-          </div>
-        )}
-
-        {/* ── Guardia (SC del catálogo o virtual 7xxx/8xxx): card unificada ── */}
-        {(isGuardia || guardiaVirtual) && (
-          <GuardiaCard
-            titulo={turno?.descripcion ?? 'Guardia en ruta habitual'}
-            horaInicio={
-              guardiaVirtual?.horaInicio
-              ?? hhmm(turno?.hora_inicio)
-              ?? (data.servicios[0] ? formatTime(data.servicios[0].hora_salida) : null)
-            }
-            horaFin={
-              guardiaVirtual?.horaFin
-              ?? hhmm(turno?.hora_fin)
-              ?? (data.servicios.length > 0
-                  ? formatTime(data.servicios[data.servicios.length - 1].hora_llegada)
-                  : null)
-            }
-            duracion={turno?.duracion_minutos}
-          />
-        )}
-
-        {/* Timeline de servicios (solo turnos de conducción, no guardias) */}
-        {!isGuardia && data.servicios.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-              <Train className="w-4 h-4 text-gray-500" />
-              <h3 className="font-bold text-gray-900 text-sm">Servicios del turno</h3>
-              <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                {data.servicios.length} tramo{data.servicios.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            <div className="divide-y divide-gray-50">
-              {data.servicios.map((svc, idx) => (
-                <ServiceRow
-                  key={svc.id}
-                  service={svc}
-                  isFirst={idx === 0}
-                  isLast={idx === data.servicios.length - 1}
-                  nombreEstacion={nombreEstacion}
-                />
-              ))}
-            </div>
-
-            {/* Pie: hora de presentación y finalización */}
-            {(turno?.hora_inicio || data.servicios.length > 1) && (
-              <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
-                <Clock className="w-3.5 h-3.5 text-gray-400" />
-                <span className="text-xs text-gray-500">
-                  {turno?.hora_inicio && turno?.hora_fin
-                    ? <>
-                        <span className="font-semibold text-gray-700">{hhmm(turno.hora_inicio)}</span>
-                        {' → '}
-                        <span className="font-semibold text-gray-700">{hhmm(turno.hora_fin)}</span>
-                        <span className="text-gray-400 ml-1">(presentación · fin jornada)</span>
-                      </>
-                    : <>
-                        {formatTime(data.servicios[0].hora_salida)}
-                        {' → '}
-                        {formatTime(data.servicios[data.servicios.length - 1].hora_llegada)}
-                        {data.servicios[data.servicios.length - 1].dia_siguiente && ' (+1 día)'}
-                      </>
-                  }
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Turno de servicio sin detalle todavía */}
-        {turno && !isRest && !isEspecial && !guardiaVirtual && data.servicios.length === 0 && (
-          <div className="bg-white rounded-2xl p-4 flex gap-3 items-center shadow-sm border border-gray-100">
-            <Info className="w-5 h-5 text-gray-400 shrink-0" />
-            <p className="text-sm text-gray-500 leading-snug">
-              Los servicios de este turno se verán cuando el administrador suba el catálogo de turnos.
-            </p>
-          </div>
-        )}
-
-        {/* Sin turno asignado */}
-        {!data.asignacion && (
-          <div className="bg-white rounded-2xl p-5 flex flex-col items-center gap-2 text-center shadow-sm border border-gray-100">
-            <CalendarDays className="w-10 h-10 text-gray-300" />
-            <p className="text-sm text-gray-500">Sin turno asignado para este día</p>
-          </div>
-        )}
-
-        {/* ── Banner: turno cambiado ──────────────────────────── */}
-        {isCambio && (
-          <div className="bg-violet-50 border border-violet-200 rounded-2xl overflow-hidden shadow-sm">
-            {/* Cabecera */}
-            <div className="px-4 py-3 flex items-center gap-2 border-b border-violet-100">
-              <ArrowLeftRight className="w-4 h-4 text-violet-600 shrink-0" />
-              <span className="text-sm font-bold text-violet-800">Turno cambiado</span>
-            </div>
-
-            {/* Turno original */}
-            {data.asignacion?.turno_original && (
-              <div className="px-4 py-3 flex items-center gap-3">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm"
-                  style={{
-                    backgroundColor: data.asignacion.turno_original.color_hex,
-                    color: data.asignacion.turno_original.text_color_hex,
-                  }}
-                >
-                  {data.asignacion.turno_original.numero}
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: `${textCol}22` }}>
+                  {isVacaciones ? (
+                    <Umbrella className="w-7 h-7" style={{ color: textCol }} />
+                  ) : isDescanso ? (
+                    <Bed className="w-7 h-7" style={{ color: textCol }} />
+                  ) : isEspecial ? (
+                    <Clock className="w-7 h-7" style={{ color: textCol }} />
+                  ) : (isGuardia || guardiaVirtual) ? (
+                    <Shield className="w-7 h-7" style={{ color: textCol }} />
+                  ) : (
+                    <Train className="w-7 h-7" style={{ color: textCol }} />
+                  )}
                 </div>
+
                 <div>
-                  <p className="text-xs text-violet-600 font-medium">Turno original</p>
-                  <p className="text-sm font-semibold text-gray-900">
-                    {data.asignacion.turno_original.numero}
-                    {data.asignacion.turno_original.descripcion && (
-                      <span className="font-normal text-gray-500 ml-1.5">
-                        — {data.asignacion.turno_original.descripcion}
-                      </span>
-                    )}
-                  </p>
+                  {!data.asignacion ? (
+                    <h2 style={{ color: textCol }} className="text-2xl font-black leading-none opacity-40">
+                      Sin turno
+                    </h2>
+                  ) : (
+                    <>
+                      <h2 style={{ color: textCol }} className="text-4xl font-black leading-none tracking-tight">
+                        {turno?.numero ?? '—'}
+                      </h2>
+                      {(turno?.descripcion || guardiaVirtual) && (
+                        <p style={{ color: textCol }} className="text-sm opacity-70 mt-1">
+                          {turno?.descripcion ?? 'Guardia en ruta habitual'}
+                        </p>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* Botón revertir o confirmación */}
-            <div className="px-4 pb-3">
-              {!showRevertConfirm ? (
-                <button
-                  onClick={() => setShowRevertConfirm(true)}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
-                    border border-violet-300 text-violet-700 text-sm font-medium
-                    hover:bg-violet-100 active:bg-violet-200 transition-colors"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Revertir cambio
-                </button>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200
-                    rounded-xl px-3 py-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800 leading-snug">
-                      Esto también revertirá el turno del compañero implicado al turno que tenía.
-                      ¿Confirmar?
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setShowRevertConfirm(false)}
-                      className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm
-                        font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      onClick={handleRevertir}
-                      disabled={reverting}
-                      className="flex-1 py-2.5 rounded-xl bg-violet-600 text-white text-sm
-                        font-semibold hover:bg-violet-700 disabled:opacity-50 transition-colors
-                        flex items-center justify-center gap-2"
-                    >
-                      {reverting
-                        ? <Loader2 className="w-4 h-4 animate-spin" />
-                        : <RotateCcw className="w-4 h-4" />
-                      }
-                      Confirmar reversión
-                    </button>
-                  </div>
+              {turno && !isRest && (turno.duracion_minutos || turno.km_totales) && (
+                <div className="flex gap-4">
+                  {turno.duracion_minutos && (
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" style={{ color: textCol, opacity: 0.6 }} />
+                      <span style={{ color: textCol }} className="text-sm font-semibold opacity-90">
+                        {formatDuration(turno.duracion_minutos)}
+                      </span>
+                    </div>
+                  )}
+                  {turno.km_totales && (
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5" style={{ color: textCol, opacity: 0.6 }} />
+                      <span style={{ color: textCol }} className="text-sm font-semibold opacity-90">
+                        {turno.km_totales} km
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          </div>
-        )}
 
-        {/* Nota del administrador */}
-        {data.asignacion?.nota && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
-            <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-            <div>
-              <p className="text-xs font-semibold text-amber-700 mb-1">Nota del administrador</p>
-              <p className="text-sm text-amber-800">{data.asignacion.nota}</p>
+            {/* ── Contenido principal ────────────────────────────── */}
+            <div className="bg-gray-50 -mt-5 rounded-t-3xl px-4 pt-5 pb-8 flex flex-col gap-3">
+
+              {isRest && (
+                <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${bg}` }}>
+                    {isVacaciones
+                      ? <Umbrella className="w-6 h-6" style={{ color: textCol }} />
+                      : <Bed       className="w-6 h-6" style={{ color: textCol }} />}
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900">
+                      {isVacaciones
+                        ? (turno?.descripcion ?? 'Día de vacaciones')
+                        : (turno?.descripcion ?? 'Día de descanso')}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-0.5">No hay servicios programados</p>
+                  </div>
+                </div>
+              )}
+
+              {isEspecial && (
+                <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: bg }}>
+                    <Clock className="w-6 h-6" style={{ color: textCol }} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-gray-900">{turno?.descripcion ?? turno?.numero}</p>
+                    <p className="text-sm text-gray-500 mt-0.5">Sin servicios de conducción</p>
+                  </div>
+                </div>
+              )}
+
+              {(isGuardia || guardiaVirtual) && (
+                <GuardiaCard
+                  titulo={turno?.descripcion ?? 'Guardia en ruta habitual'}
+                  horaInicio={
+                    guardiaVirtual?.horaInicio
+                    ?? hhmm(turno?.hora_inicio)
+                    ?? (data.servicios[0] ? formatTime(data.servicios[0].hora_salida) : null)
+                  }
+                  horaFin={
+                    guardiaVirtual?.horaFin
+                    ?? hhmm(turno?.hora_fin)
+                    ?? (data.servicios.length > 0
+                        ? formatTime(data.servicios[data.servicios.length - 1].hora_llegada)
+                        : null)
+                  }
+                  duracion={turno?.duracion_minutos}
+                />
+              )}
+
+              {!isGuardia && data.servicios.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+                    <Train className="w-4 h-4 text-gray-500" />
+                    <h3 className="font-bold text-gray-900 text-sm">Servicios del turno</h3>
+                    <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                      {data.servicios.length} tramo{data.servicios.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-gray-50">
+                    {data.servicios.map((svc, idx) => (
+                      <ServiceRow
+                        key={svc.id}
+                        service={svc}
+                        isFirst={idx === 0}
+                        isLast={idx === data.servicios.length - 1}
+                        nombreEstacion={nombreEstacion}
+                      />
+                    ))}
+                  </div>
+
+                  {(turno?.hora_inicio || data.servicios.length > 1) && (
+                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
+                      <Clock className="w-3.5 h-3.5 text-gray-400" />
+                      <span className="text-xs text-gray-500">
+                        {turno?.hora_inicio && turno?.hora_fin
+                          ? <>
+                              <span className="font-semibold text-gray-700">{hhmm(turno.hora_inicio)}</span>
+                              {' → '}
+                              <span className="font-semibold text-gray-700">{hhmm(turno.hora_fin)}</span>
+                              <span className="text-gray-400 ml-1">(presentación · fin jornada)</span>
+                            </>
+                          : <>
+                              {formatTime(data.servicios[0].hora_salida)}
+                              {' → '}
+                              {formatTime(data.servicios[data.servicios.length - 1].hora_llegada)}
+                              {data.servicios[data.servicios.length - 1].dia_siguiente && ' (+1 día)'}
+                            </>
+                        }
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {turno && !isRest && !isEspecial && !guardiaVirtual && data.servicios.length === 0 && (
+                <div className="bg-white rounded-2xl p-4 flex gap-3 items-center shadow-sm border border-gray-100">
+                  <Info className="w-5 h-5 text-gray-400 shrink-0" />
+                  <p className="text-sm text-gray-500 leading-snug">
+                    Los servicios de este turno se verán cuando el administrador suba el catálogo de turnos.
+                  </p>
+                </div>
+              )}
+
+              {!data.asignacion && (
+                <div className="bg-white rounded-2xl p-5 flex flex-col items-center gap-2 text-center shadow-sm border border-gray-100">
+                  <CalendarDays className="w-10 h-10 text-gray-300" />
+                  <p className="text-sm text-gray-500">Sin turno asignado para este día</p>
+                </div>
+              )}
+
+              {isCambio && (
+                <div className="bg-violet-50 border border-violet-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 flex items-center gap-2 border-b border-violet-100">
+                    <ArrowLeftRight className="w-4 h-4 text-violet-600 shrink-0" />
+                    <span className="text-sm font-bold text-violet-800">Turno cambiado</span>
+                  </div>
+
+                  {data.asignacion?.turno_original && (
+                    <div className="px-4 py-3 flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm"
+                        style={{
+                          backgroundColor: data.asignacion.turno_original.color_hex,
+                          color: data.asignacion.turno_original.text_color_hex,
+                        }}
+                      >
+                        {data.asignacion.turno_original.numero}
+                      </div>
+                      <div>
+                        <p className="text-xs text-violet-600 font-medium">Turno original</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {data.asignacion.turno_original.numero}
+                          {data.asignacion.turno_original.descripcion && (
+                            <span className="font-normal text-gray-500 ml-1.5">
+                              — {data.asignacion.turno_original.descripcion}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="px-4 pb-3">
+                    {!showRevertConfirm ? (
+                      <button
+                        onClick={() => setShowRevertConfirm(true)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
+                          border border-violet-300 text-violet-700 text-sm font-medium
+                          hover:bg-violet-100 active:bg-violet-200 transition-colors"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        Revertir cambio
+                      </button>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <p className="text-xs text-amber-800 leading-snug">
+                            Esto también revertirá el turno del compañero implicado al turno que tenía. ¿Confirmar?
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setShowRevertConfirm(false)}
+                            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={handleRevertir}
+                            disabled={reverting}
+                            className="flex-1 py-2.5 rounded-xl bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                          >
+                            {reverting
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <RotateCcw className="w-4 h-4" />
+                            }
+                            Confirmar reversión
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {data.asignacion?.nota && (
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex gap-3">
+                  <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-amber-700 mb-1">Nota del administrador</p>
+                    <p className="text-sm text-amber-800">{data.asignacion.nota}</p>
+                  </div>
+                </div>
+              )}
+
+              {isOwnCalendar && turno && !isRest && (
+                <button
+                  onClick={() => navigate(`/cambios?fecha=${dateStr}`)}
+                  className="w-full flex items-center justify-center gap-2 py-3.5 px-4
+                    bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-700
+                    hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm"
+                >
+                  <ArrowLeftRight className="w-4 h-4 text-gray-500" />
+                  Solicitar cambio de turno
+                </button>
+              )}
+
+              {/* Navegación anterior / siguiente día */}
+              <div className="flex gap-3 mt-1">
+                <button
+                  onClick={() => goDay(-1)}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-4
+                    bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600
+                    hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Día anterior
+                </button>
+                <button
+                  onClick={() => goDay(1)}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 px-4
+                    bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600
+                    hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  Día siguiente
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
             </div>
           </div>
         )}
-
-        {/* Solicitar cambio */}
-        {isOwnCalendar && turno && !isRest && (
-          <button
-            onClick={() => navigate(`/cambios?fecha=${dateStr}`)}
-            className="w-full flex items-center justify-center gap-2 py-3.5 px-4
-              bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-700
-              hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm"
-          >
-            <ArrowLeftRight className="w-4 h-4 text-gray-500" />
-            Solicitar cambio de turno
-          </button>
-        )}
-
-        {/* ── Navegación anterior / siguiente día ────────────────── */}
-        <div className="flex gap-3 mt-1">
-          <button
-            onClick={() => goDay(-1)}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4
-              bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600
-              hover:bg-gray-50 active:bg-gray-100 transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Día anterior
-          </button>
-          <button
-            onClick={() => goDay(1)}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4
-              bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600
-              hover:bg-gray-50 active:bg-gray-100 transition-colors"
-          >
-            Día siguiente
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
-
       </div>
     </div>
   )
@@ -531,7 +520,6 @@ function ServiceRow({ service, isFirst, isLast, nombreEstacion }: {
 }) {
   return (
     <div className="flex gap-3 px-4 py-3.5">
-      {/* Línea de tiempo */}
       <div className="flex flex-col items-center">
         <div className={cn(
           'w-3 h-3 rounded-full border-2 bg-white shrink-0 mt-0.5',
@@ -540,10 +528,7 @@ function ServiceRow({ service, isFirst, isLast, nombreEstacion }: {
         {!isLast && <div className="flex-1 w-0.5 bg-gray-200 my-1 min-h-[24px]" />}
       </div>
 
-      {/* Contenido del servicio */}
       <div className="flex-1 min-w-0 pb-1">
-
-        {/* ── Guardia SC ───────────────────────────────────────── */}
         {service.numero_tren === 'SC' ? (
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
@@ -560,7 +545,6 @@ function ServiceRow({ service, isFirst, isLast, nombreEstacion }: {
             </div>
           </div>
         ) : (
-          /* ── Servicio normal ───────────────────────────────── */
           <>
             {service.numero_tren && (
               <div className="flex items-center gap-1.5 mb-1.5">
@@ -604,7 +588,6 @@ function ServiceRow({ service, isFirst, isLast, nombreEstacion }: {
 }
 
 // ── GuardiaCard ────────────────────────────────────────────────
-// Card unificada para guardias SC (del catálogo) y virtuales (7xxx/8xxx).
 
 function GuardiaCard({ titulo, horaInicio, horaFin, duracion }: {
   titulo: string

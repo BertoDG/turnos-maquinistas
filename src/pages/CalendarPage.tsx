@@ -1,13 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCalendar } from '@/hooks/useCalendar'
 import { useMainScroll } from '@/components/layout/Layout'
 import MonthCalendar from '@/components/calendar/MonthCalendar'
 import { Loader2, AlertCircle, CalendarDays } from 'lucide-react'
-
-// Misma clave que Layout.tsx (debe coincidir)
-const SCROLL_KEY = 'calendar_scroll_top'
 
 /** Posición scrollTop que deja `el` al inicio del área visible de `container` */
 function topOf(el: HTMLElement, container: HTMLElement): number {
@@ -17,13 +14,11 @@ function topOf(el: HTMLElement, container: HTMLElement): number {
 }
 
 export default function CalendarPage() {
-  const { profile }    = useAuth()
+  const { profile }      = useAuth()
   const { maquinistaId } = useParams()
-  const [searchParams]   = useSearchParams()
   const scrollRef        = useMainScroll()
 
-  const targetId    = maquinistaId || profile?.id
-  const scrollToDate = searchParams.get('scrollTo')
+  const targetId = maquinistaId || profile?.id
 
   const { months, loading, error, loadMorePast, loadMoreFuture } = useCalendar({
     maquinistaId: targetId,
@@ -34,37 +29,20 @@ export default function CalendarPage() {
 
   const now = new Date()
 
-  // Scroll cuando los datos están listos
+  // Scroll al mes actual solo la primera vez que los datos están listos
   useEffect(() => {
-    // Esperar a que haya meses reales en el DOM; si months.length === 0 el
-    // contenedor no tiene suficiente altura para llegar a la posición guardada
     if (loading || scrolledRef.current || months.length === 0) return
 
     const container = scrollRef?.current
     if (!container) return
 
-    // Hay posición guardada (volviendo desde detalle del día u otra subpágina)
-    const saved = sessionStorage.getItem(SCROLL_KEY)
-    if (saved !== null) {
-      sessionStorage.removeItem(SCROLL_KEY)
-      container.scrollTop = parseInt(saved, 10)
-      scrolledRef.current = true
-      return
-    }
-
-    if (scrollToDate) {
-      // scrollToDate presente pero sin posición guardada: nada que hacer
-      scrolledRef.current = true
-      return
-    }
-
-    // Carga inicial: scroll suave al mes actual
     const key = `${now.getFullYear()}-${now.getMonth()}`
     const el  = monthRefs.current.get(key)
     if (!el) return
+
     container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
     scrolledRef.current = true
-  }, [loading, months.length, scrollToDate, scrollRef])
+  }, [loading, months.length, scrollRef])
 
   function scrollToToday() {
     const container = scrollRef?.current
@@ -73,7 +51,6 @@ export default function CalendarPage() {
     const el  = monthRefs.current.get(key)
     if (!el) return
     container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
-    scrolledRef.current = true
   }
 
   if (loading) {
@@ -146,7 +123,7 @@ export default function CalendarPage() {
       <button
         onClick={scrollToToday}
         style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom) + 0.75rem)' }}
-        className="fixed right-4 z-50
+        className="fixed right-4 z-40
           bg-red-600 text-white text-xs font-bold
           px-4 py-2 rounded-full shadow-lg
           hover:bg-red-700 active:scale-95 transition-all
@@ -155,6 +132,7 @@ export default function CalendarPage() {
         <CalendarDays className="w-3.5 h-3.5" />
         Hoy
       </button>
+
     </div>
   )
 }

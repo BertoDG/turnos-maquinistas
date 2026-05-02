@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, Outlet } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { ColorPrefsProvider } from '@/contexts/ColorPrefsContext'
@@ -22,6 +22,20 @@ import ProfilePage from '@/pages/ProfilePage'
 function DayDetailRoute() {
   const { dateStr } = useParams()
   return <DayDetailPage key={dateStr} />
+}
+
+/**
+ * Envuelve CalendarPage + Outlet (overlay del día).
+ * Al ser una ruta "pathless" (sin path), renderiza para todos sus hijos:
+ * index (/) y dia/:dateStr. CalendarPage nunca se desmonta entre ambas rutas.
+ */
+function CalendarAndDetail() {
+  return (
+    <>
+      <CalendarPage />
+      <Outlet />
+    </>
+  )
 }
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -197,8 +211,11 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        <Route index element={<CalendarPage />} />
-        <Route path="dia/:dateStr" element={<DayDetailRoute />} />
+        {/* Ruta pathless: CalendarPage siempre montado; overlay del día via Outlet */}
+        <Route element={<CalendarAndDetail />}>
+          <Route index element={null} />
+          <Route path="dia/:dateStr" element={<DayDetailRoute />} />
+        </Route>
         <Route path="companeros" element={<ColleaguesPage />} />
         <Route path="companeros/:maquinistaId" element={<CalendarPage />} />
         <Route path="cambios" element={<SwapsPage />} />

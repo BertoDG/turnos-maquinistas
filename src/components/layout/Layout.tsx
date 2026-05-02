@@ -9,8 +9,6 @@ export function useMainScroll() {
   return useContext(MainScrollContext)
 }
 
-const SCROLL_KEY = 'calendar_scroll_top'
-
 if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
   window.history.scrollRestoration = 'manual'
 }
@@ -18,24 +16,13 @@ if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
 export default function Layout() {
   const mainRef  = useRef<HTMLElement>(null)
   const location = useLocation()
-  const prevPath = useRef<string | null>(null)
 
+  // Ir al inicio solo al navegar a páginas que no son el calendario
   useEffect(() => {
-    const prev = prevPath.current
-    const next = location.pathname
-    prevPath.current = next
-
-    // Saliendo del calendario → guardar posición exacta en píxeles
-    if (prev === '/' && next !== '/') {
-      sessionStorage.setItem(SCROLL_KEY, String(mainRef.current?.scrollTop ?? 0))
+    const isCalendar = location.pathname === '/' || location.pathname.startsWith('/dia/')
+    if (!isCalendar && mainRef.current) {
+      mainRef.current.scrollTop = 0
     }
-
-    // Llegando al calendario → CalendarPage gestiona la restauración
-    // (los datos son asíncronos; el scroll debe aplicarse tras el render)
-    if (next === '/') return
-
-    // Cualquier otra ruta: ir al inicio
-    if (mainRef.current) mainRef.current.scrollTop = 0
   }, [location.pathname])
 
   return (

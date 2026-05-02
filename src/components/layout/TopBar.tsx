@@ -125,8 +125,7 @@ export default function TopBar() {
 
   function handleBack() {
     if (isDayDetail) {
-      const dateStr = location.pathname.slice('/dia/'.length)
-      navigate(`/?scrollTo=${dateStr}`, { replace: true })
+      navigate('/', { replace: true })
     } else if (isCompaneroCalendar) {
       navigate('/companeros')
     } else {
