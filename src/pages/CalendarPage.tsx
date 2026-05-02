@@ -1,14 +1,23 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCalendar } from '@/hooks/useCalendar'
+import { useMainScroll } from '@/components/layout/Layout'
 import MonthCalendar from '@/components/calendar/MonthCalendar'
 import { Loader2, AlertCircle, CalendarDays } from 'lucide-react'
+
+// Devuelve la posición scrollTop que coloca `el` al inicio del contenedor
+function getScrollTopFor(el: HTMLElement, container: HTMLElement): number {
+  return el.getBoundingClientRect().top
+    - container.getBoundingClientRect().top
+    + container.scrollTop
+}
 
 export default function CalendarPage() {
   const { profile } = useAuth()
   const { maquinistaId } = useParams()
   const [searchParams] = useSearchParams()
+  const mainRef = useMainScroll()
 
   const targetId = maquinistaId || profile?.id
 
@@ -20,8 +29,7 @@ export default function CalendarPage() {
   })
 
   // Refs por mes: clave "YYYY-M" (año + mes 0-indexed)
-  const monthRefs = useRef<Map<string, HTMLDivElement>>(new Map())
-  // Evitar múltiples scrolls en el mismo montaje
+  const monthRefs   = useRef<Map<string, HTMLDivElement>>(new Map())
   const scrolledRef = useRef(false)
 
   const now = new Date()
@@ -30,22 +38,47 @@ export default function CalendarPage() {
   const targetYear  = scrollToDate ? parseInt(scrollToDate.slice(0, 4), 10) : now.getFullYear()
   const targetMonth = scrollToDate ? parseInt(scrollToDate.slice(5, 7), 10) - 1 : now.getMonth()
 
-  // Scroll automático al mes destino cuando los datos estén listos
-  useEffect(() => {
+  // Si Layout ya ha restaurado la posición guardada (scrollToDate presente pero
+  // sessionStorage ya fue consumido), no hace falta volver a hacer scroll.
+  // Usamos useLayoutEffect para ejecutar antes del primer paint visible.
+  useLayoutEffect(() => {
     if (loading || scrolledRef.current) return
-    const key = `${targetYear}-${targetMonth}`
-    const el = monthRefs.current.get(key)
-    if (el) {
-      // 'instant' al volver de un día concreto; 'smooth' en carga inicial
-      el.scrollIntoView({ behavior: scrollToDate ? 'instant' : 'smooth', block: 'start' })
-      scrolledRef.current = true
-    }
-  }, [loading, targetYear, targetMonth, scrollToDate])
 
+    const container = mainRef?.current
+    if (!container) return
+
+    const key = `${targetYear}-${targetMonth}`
+    const el  = monthRefs.current.get(key)
+    if (!el) return
+
+    const top = getScrollTopFor(el, container)
+
+    if (scrollToDate) {
+      // Volviendo del detalle de día: posición instantánea, sin animación
+      container.scrollTop = top
+    } else {
+      // Carga inicial: scroll suave al mes actual
+      container.scrollTo({ top, behavior: 'smooth' })
+    }
+
+    scrolledRef.current = true
+  }, [loading, targetYear, targetMonth, scrollToDate, mainRef])
+
+  // Botón "Hoy": scroll directo sobre el contenedor, nunca scrollIntoView
   function scrollToToday() {
+    const container = mainRef?.current
+    if (!container) return
     const key = `${now.getFullYear()}-${now.getMonth()}`
-    monthRefs.current.get(key)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    const el  = monthRefs.current.get(key)
+    if (!el) return
+    container.scrollTo({ top: getScrollTopFor(el, container), behavior: 'smooth' })
   }
+
+  // Cuando el usuario navega entre días dentro del detalle y vuelve,
+  // el scrollToDate puede cambiar sin desmontar el componente → resetear el flag
+  useEffect(() => {
+    scrolledRef.current = false
+  }, [scrollToDate])
 
   if (loading) {
     return (
@@ -93,9 +126,6 @@ export default function CalendarPage() {
       {/* Meses */}
       {months.map((month) => {
         const key = `${month.year}-${month.month}`
-        const isTarget =
-          month.year === targetYear && month.month === targetMonth
-
         return (
           <div
             key={key}
@@ -103,7 +133,6 @@ export default function CalendarPage() {
               if (el) monthRefs.current.set(key, el)
               else monthRefs.current.delete(key)
             }}
-            className={isTarget ? 'scroll-mt-2' : undefined}
           >
             <MonthCalendar month={month} maquinistaId={maquinistaId} />
             <div className="mx-4 h-px bg-gray-200 mb-2" />
