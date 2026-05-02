@@ -1,0 +1,9 @@
+user/pass: 
+14061994@turnosmaq.internal/,5*5QoA9r
+6129910@turnosmaq.internal/Renfe2026!
+
+Notas:
+Merma, lo llaman al tiempo minimo que debe haber entre cada turno. Un maquinista de cercanias debe descansar minimo 12horas entre turno, lo normal es 14. y la diferencia entre 12 y 14 de descanso es la merma.
+
+Añadir opcion para que se active que otros compañeros puedan ver mi turno y solicitarme cambios. Esto también activa que el usuario pueda hacer cambios.
+Revisar sección de opciones del perfil para renombrar la seccion.
