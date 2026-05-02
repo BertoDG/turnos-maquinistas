@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation, matchPath } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import type { Asignacion, ServicioTurno } from '@/types'
@@ -44,7 +44,9 @@ function decodeGuardiaVirtual(numero: string): { horaInicio: string; horaFin: st
 }
 
 export default function DayDetailPage() {
-  const { dateStr } = useParams<{ dateStr: string }>()
+  const location = useLocation()
+  const diaMatch = matchPath('/dia/:dateStr', location.pathname)
+  const dateStr = diaMatch?.params?.dateStr
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { profile } = useAuth()

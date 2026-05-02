@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useParams, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { ColorPrefsProvider } from '@/contexts/ColorPrefsContext'
 import Layout from '@/components/layout/Layout'
 import LoginPage from '@/pages/LoginPage'
 import CalendarPage from '@/pages/CalendarPage'
-import DayDetailPage from '@/pages/DayDetailPage'
 import ColleaguesPage from '@/pages/ColleaguesPage'
 import SwapsPage from '@/pages/SwapsPage'
 import AdminPage from '@/pages/admin/AdminPage'
@@ -14,29 +13,6 @@ import UploadPage from '@/pages/admin/UploadPage'
 import UsersPage from '@/pages/admin/UsersPage'
 import ProfilePage from '@/pages/ProfilePage'
 
-/**
- * Wrapper que fuerza el remontaje completo de DayDetailPage cada vez que
- * cambia el parámetro :dateStr. Sin esto, React reutiliza la instancia del
- * componente y la navegación entre días no dispara los efectos.
- */
-function DayDetailRoute() {
-  const { dateStr } = useParams()
-  return <DayDetailPage key={dateStr} />
-}
-
-/**
- * Envuelve CalendarPage + Outlet (overlay del día).
- * Al ser una ruta "pathless" (sin path), renderiza para todos sus hijos:
- * index (/) y dia/:dateStr. CalendarPage nunca se desmonta entre ambas rutas.
- */
-function CalendarAndDetail() {
-  return (
-    <>
-      <CalendarPage />
-      <Outlet />
-    </>
-  )
-}
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, isActive, signOut } = useAuth()
@@ -211,11 +187,9 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        {/* Ruta pathless: CalendarPage siempre montado; overlay del día via Outlet */}
-        <Route element={<CalendarAndDetail />}>
-          <Route index element={null} />
-          <Route path="dia/:dateStr" element={<DayDetailRoute />} />
-        </Route>
+        {/* Layout maneja CalendarPage y DayDetailPage internamente (siempre montados) */}
+        <Route index element={null} />
+        <Route path="dia/:dateStr" element={null} />
         <Route path="companeros" element={<ColleaguesPage />} />
         <Route path="companeros/:maquinistaId" element={<CalendarPage />} />
         <Route path="cambios" element={<SwapsPage />} />
