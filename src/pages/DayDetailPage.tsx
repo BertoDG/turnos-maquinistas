@@ -174,18 +174,13 @@ export default function DayDetailPage() {
     ? computeTurnoColors(turno, prefs, guardiaVirtual?.horaInicio ?? null)
     : { bg: '#F3F4F6', turnoText: '#111827' }
 
-  // ── Overlay full-screen ─────────────────────────────────────────────────────
-  return (
-    <>
-      {/* Backdrop: se desvanece mientras el panel sube */}
-      <div
-        className="fixed inset-0 bg-black/25 animate-fade-in"
-        style={{ zIndex: 49 }}
-        onClick={handleClose}
-      />
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const isToday  = dateStr === todayStr
 
-      <div className="fixed inset-0 z-50 flex flex-col bg-white animate-slide-up"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)', willChange: 'transform' }}>
+  // ── Pantalla completa (overlay sin animación) ───────────────────────────────
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-white"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-2 px-4 h-14 bg-white border-b border-gray-100 shadow-sm">
@@ -327,6 +322,18 @@ export default function DayDetailPage() {
                         : null)
                   }
                   duracion={turno?.duracion_minutos}
+                />
+              )}
+
+              {/* ── Progreso del turno (solo hoy, solo servicio con horario) ── */}
+              {isToday && !isRest && !isEspecial && !isGuardia && !guardiaVirtual
+                && turno?.hora_inicio && turno?.hora_fin && data.servicios.length > 0 && (
+                <ShiftProgress
+                  horaInicio={turno.hora_inicio}
+                  horaFin={turno.hora_fin}
+                  servicios={data.servicios}
+                  accentColor={bg}
+                  nombreEstacion={nombreEstacion}
                 />
               )}
 
@@ -517,7 +524,6 @@ export default function DayDetailPage() {
         )}
       </div>
     </div>
-    </>
   )
 }
 
@@ -627,6 +633,203 @@ function GuardiaCard({ titulo, horaInicio, horaFin, duracion }: {
           <p className="text-xs text-gray-400 mb-1">Fin</p>
           <p className="text-2xl font-black text-gray-900">{horaFin ?? '—'}</p>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ShiftProgress ──────────────────────────────────────────────
+
+function toMin(t: string): number {
+  const [h, m] = t.slice(0, 5).split(':').map(Number)
+  return h * 60 + m
+}
+
+function fmtMin(m: number): string {
+  const hh = Math.floor(m / 60) % 24
+  const mm = m % 60
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
+function ShiftProgress({
+  horaInicio,
+  horaFin,
+  servicios,
+  accentColor,
+  nombreEstacion,
+}: {
+  horaInicio: string
+  horaFin: string
+  servicios: ServicioTurno[]
+  accentColor: string
+  nombreEstacion: (code: string) => string
+}) {
+  const [nowMin, setNowMin] = useState(() => {
+    const n = new Date()
+    return n.getHours() * 60 + n.getMinutes()
+  })
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const n = new Date()
+      setNowMin(n.getHours() * 60 + n.getMinutes())
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const startMin = toMin(horaInicio)
+  let endMin = toMin(horaFin)
+  if (endMin <= startMin) endMin += 1440
+  const totalMin = endMin - startMin
+  if (totalMin <= 0) return null
+
+  // Para turnos nocturnos que empiezan tras medianoche
+  let adjNow = nowMin
+  if (endMin > 1440 && adjNow < startMin) adjNow += 1440
+
+  const isActive = adjNow >= startMin && adjNow <= endMin
+
+  // Construir lista de eventos
+  interface Ev { min: number; label: string; sub?: string }
+  const evs: Ev[] = [{ min: startMin, label: 'Presentación' }]
+
+  for (const s of servicios) {
+    let dep = toMin(s.hora_salida)
+    let arr = toMin(s.hora_llegada)
+    if (dep < startMin) dep += 1440
+    if (arr < dep) arr += 1440
+
+    evs.push({
+      min: dep,
+      label: s.numero_tren === 'SC' ? 'Guardia' : `Tren ${s.numero_tren}`,
+      sub: `${nombreEstacion(s.origen)} → ${nombreEstacion(s.destino)}`,
+    })
+    evs.push({ min: arr, label: nombreEstacion(s.destino) })
+  }
+
+  evs.push({ min: endMin, label: 'Fin de jornada' })
+
+  // Altura fija por segmento (más legible en móvil que proporcional)
+  const SEG_H = 44
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+        <Clock className="w-4 h-4 text-gray-500" />
+        <h3 className="font-bold text-gray-900 text-sm">Progreso del turno</h3>
+        {isActive && (
+          <span className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-red-600">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600" />
+            </span>
+            En turno
+          </span>
+        )}
+      </div>
+
+      {/* Timeline */}
+      <div className="px-4 py-4">
+        {evs.map((ev, i) => {
+          const isLast   = i === evs.length - 1
+          const next     = evs[i + 1]
+          const segDur   = isLast ? 0 : next.min - ev.min
+          const isPast   = adjNow >= ev.min
+          const nowInSeg = !isLast && adjNow > ev.min && adjNow < next.min
+          const nowFrac  = (nowInSeg && segDur > 0) ? (adjNow - ev.min) / segDur : 0
+          const fillPct  = adjNow < ev.min ? 0
+            : nowInSeg ? nowFrac
+            : adjNow >= (next?.min ?? Infinity) ? 1
+            : 0
+
+          return (
+            <div key={i} className="flex">
+              {/* ── Columna izquierda: punto + línea ── */}
+              <div className="flex flex-col items-center shrink-0" style={{ width: 24 }}>
+                {/* Punto del evento */}
+                <div
+                  className="w-3 h-3 rounded-full border-2 mt-[3px] shrink-0 bg-white relative z-10"
+                  style={isPast
+                    ? { borderColor: accentColor }
+                    : { borderColor: '#d1d5db', backgroundColor: '#f9fafb' }}
+                />
+                {/* Segmento de línea */}
+                {!isLast && (
+                  <div
+                    className="relative rounded-full bg-gray-100 my-1"
+                    style={{ width: 2, height: SEG_H }}
+                  >
+                    {/* Relleno progreso */}
+                    <div
+                      className="absolute top-0 left-0 right-0 rounded-full"
+                      style={{
+                        height: `${fillPct * 100}%`,
+                        backgroundColor: accentColor,
+                        opacity: 0.6,
+                      }}
+                    />
+                    {/* Punto pulsante «ahora» */}
+                    {nowInSeg && (
+                      <div
+                        className="absolute left-1/2"
+                        style={{ top: `${nowFrac * 100}%`, transform: 'translate(-50%, -50%)', zIndex: 2 }}
+                      >
+                        <span className="relative flex h-3.5 w-3.5">
+                          <span className="animate-ping absolute h-full w-full rounded-full opacity-60"
+                            style={{ backgroundColor: accentColor }} />
+                          <span className="relative inline-flex rounded-full h-3.5 w-3.5"
+                            style={{ backgroundColor: accentColor }} />
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Columna derecha: etiqueta + hora + «ahora» ── */}
+              <div className="flex-1 min-w-0 pl-3">
+                {/* Fila del evento */}
+                <div className="flex items-start gap-1 mt-[1px]">
+                  <div className="flex-1 min-w-0">
+                    <p className={cn('text-xs font-semibold leading-tight',
+                      isPast ? 'text-gray-800' : 'text-gray-400')}>
+                      {ev.label}
+                    </p>
+                    {ev.sub && (
+                      <p className={cn('text-xs mt-0.5 leading-tight',
+                        isPast ? 'text-gray-500' : 'text-gray-300')}>
+                        {ev.sub}
+                      </p>
+                    )}
+                  </div>
+                  <span className={cn('text-xs font-mono tabular-nums shrink-0 ml-1',
+                    isPast ? 'text-gray-500' : 'text-gray-300')}>
+                    {fmtMin(ev.min)}
+                  </span>
+                </div>
+
+                {/* Espacio del segmento con etiqueta «ahora» alineada al punto pulsante */}
+                {!isLast && (
+                  <div className="relative" style={{ height: SEG_H }}>
+                    {nowInSeg && (
+                      <div
+                        className="absolute flex items-center gap-1"
+                        style={{ top: `${nowFrac * 100}%`, transform: 'translateY(-50%)' }}
+                      >
+                        <span className="text-xs font-bold tabular-nums"
+                          style={{ color: accentColor }}>
+                          {fmtMin(adjNow)}
+                        </span>
+                        <span className="text-[10px] text-gray-400">ahora</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
