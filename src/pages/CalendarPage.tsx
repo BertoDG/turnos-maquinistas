@@ -41,6 +41,14 @@ export default function CalendarPage() {
   // Scroll al mes correcto cuando los datos están listos
   useEffect(() => {
     if (loading || scrolledRef.current) return
+
+    if (scrollToDate) {
+      // Volviendo del detalle: Layout.tsx ya restauró la posición exacta
+      // desde sessionStorage — no interferir con el scroll
+      scrolledRef.current = true
+      return
+    }
+
     const container = scrollRef?.current
     if (!container) return
 
@@ -48,16 +56,8 @@ export default function CalendarPage() {
     const el  = monthRefs.current.get(key)
     if (!el) return
 
-    const top = topOf(el, container)
-
-    if (scrollToDate) {
-      // Volviendo del detalle: sin animación
-      container.scrollTop = top
-    } else {
-      // Carga inicial o botón Hoy: suave
-      container.scrollTo({ top, behavior: 'smooth' })
-    }
-
+    // Carga inicial: scroll suave al mes actual
+    container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
     scrolledRef.current = true
   }, [loading, targetYear, targetMonth, scrollToDate, scrollRef])
 
@@ -140,7 +140,8 @@ export default function CalendarPage() {
       {/* Botón flotante "Hoy" */}
       <button
         onClick={scrollToToday}
-        className="fixed bottom-24 right-4 z-50
+        style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom) + 0.75rem)' }}
+        className="fixed right-4 z-50
           bg-red-600 text-white text-xs font-bold
           px-4 py-2 rounded-full shadow-lg
           hover:bg-red-700 active:scale-95 transition-all
