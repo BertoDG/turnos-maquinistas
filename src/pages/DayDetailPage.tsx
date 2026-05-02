@@ -174,8 +174,16 @@ export default function DayDetailPage() {
 
   // ── Overlay full-screen ─────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white animate-slide-up"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    <>
+      {/* Backdrop: se desvanece mientras el panel sube */}
+      <div
+        className="fixed inset-0 bg-black/25 animate-fade-in"
+        style={{ zIndex: 49 }}
+        onClick={handleClose}
+      />
+
+      <div className="fixed inset-0 z-50 flex flex-col bg-white animate-slide-up"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)', willChange: 'transform' }}>
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="shrink-0 flex items-center gap-2 px-4 h-14 bg-white border-b border-gray-100 shadow-sm">
@@ -507,6 +515,7 @@ export default function DayDetailPage() {
         )}
       </div>
     </div>
+    </>
   )
 }
 
