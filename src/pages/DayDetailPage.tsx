@@ -389,7 +389,6 @@ export default function DayDetailPage() {
                       <ServiceRow
                         key={svc.id}
                         service={svc}
-                        isFirst={idx === 0}
                         isLast={!heroHoraFin && idx === data.servicios.length - 1}
                         nombreEstacion={nombreEstacion}
                       />
@@ -553,19 +552,15 @@ export default function DayDetailPage() {
 
 // ── ServiceRow ─────────────────────────────────────────────────
 
-function ServiceRow({ service, isFirst, isLast, nombreEstacion }: {
+function ServiceRow({ service, isLast, nombreEstacion }: {
   service: ServicioTurno
-  isFirst: boolean
   isLast: boolean
   nombreEstacion: (codigo: string) => string
 }) {
   return (
     <div className="flex gap-3 px-4 py-3.5">
       <div className="flex flex-col items-center">
-        <div className={cn(
-          'w-3 h-3 rounded-full border-2 bg-white shrink-0 mt-0.5',
-          isFirst ? 'border-green-500' : 'border-gray-300',
-        )} />
+        <div className="w-3 h-3 rounded-full border-2 border-gray-300 bg-white shrink-0 mt-0.5" />
         {!isLast && <div className="flex-1 w-0.5 bg-gray-200 my-1 min-h-[24px]" />}
       </div>
 
