@@ -17,12 +17,11 @@ const DIAS = [
 // ── Detectar si hay espacio para mostrar las horas ────────────────────────────
 // Las celdas miden (ancho_pantalla - padding - gaps) / 7.
 // Con padding px-3 (24px) y 6 gaps de 4px: ancho_celda = (W - 48) / 7.
-// Las horas necesitan ~60px de alto mínimo para no quedar aplastadas.
-// 60 = (W - 48) / 7  →  W ≈ 468px.  Redondeamos a 460px como umbral.
+// Umbral 350px → celda ≈ 43px, suficiente para leer horas en iPhone estándar.
 function useShowTimes(): boolean {
-  const [show, setShow] = useState(() => window.innerWidth >= 460)
+  const [show, setShow] = useState(() => window.innerWidth >= 350)
   useEffect(() => {
-    const handler = () => setShow(window.innerWidth >= 460)
+    const handler = () => setShow(window.innerWidth >= 350)
     window.addEventListener('resize', handler, { passive: true })
     return () => window.removeEventListener('resize', handler)
   }, [])

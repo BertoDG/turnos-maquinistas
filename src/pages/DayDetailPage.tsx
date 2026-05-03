@@ -656,7 +656,7 @@ function BookendRow({ tipo, hora, estacion }: {
           )}>
             {isInicio ? 'Presentación' : 'Fin de jornada'}
           </p>
-          <span className="ml-auto text-xs font-mono font-bold text-gray-600 tabular-nums">
+          <span className="ml-auto text-xs font-semibold text-gray-600">
             {hora}
           </span>
         </div>
