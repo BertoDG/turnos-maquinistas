@@ -518,7 +518,7 @@ function NewSwapForm({
 
   // Campos comunes
   const [myDate, setMyDate] = useState(defaultDate ?? '')
-  const [companeroDate, setCompaneroDate] = useState('')
+  const [companeroDate, setCompaneroDate] = useState(defaultDate ?? '')
   const [mensaje, setMensaje] = useState('')
   const [sending, setSending] = useState(false)
 
