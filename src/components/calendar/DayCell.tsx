@@ -19,7 +19,7 @@ function turnoCodeFontSize(len: number): string {
 }
 
 function timeFontSize(): string {
-  return 'clamp(5.5px, 1.4vw, 9px)'
+  return 'clamp(7px, 1.8vw, 11px)'
 }
 
 // ── Número de día con cuadro fusionado a la esquina ──────────────────────────
@@ -153,18 +153,22 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
         </div>
       )}
 
-      {/* Código del turno + horas en la misma columna */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-px" style={{ paddingTop: '1em' }}>
-        <span
-          style={{ color: turnoText, fontSize: turnoCodeFontSize(turno.numero.length) }}
-          className="font-bold leading-none text-center"
-        >
-          {turno.numero}
-        </span>
+      {/* Código del turno arriba + horas ancladas abajo */}
+      <div className="flex-1 flex flex-col" style={{ paddingTop: '0.5em' }}>
+        {/* Turno: ocupa todo el espacio libre y se centra en él */}
+        <div className="flex-1 flex items-center justify-center">
+          <span
+            style={{ color: turnoText, fontSize: turnoCodeFontSize(turno.numero.length) }}
+            className="font-bold leading-none text-center"
+          >
+            {turno.numero}
+          </span>
+        </div>
+        {/* Horas: fila fija al fondo */}
         {mostrarHoras && showTimes && (
           <span
-            style={{ color: turnoText, fontSize: timeFontSize(), opacity: 0.72 }}
-            className="font-medium leading-none text-center whitespace-nowrap"
+            style={{ color: turnoText, fontSize: timeFontSize(), opacity: 0.78 }}
+            className="font-medium leading-none text-center whitespace-nowrap self-center pb-px"
           >
             {horaInicio}·{horaFin}
           </span>
