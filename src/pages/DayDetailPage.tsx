@@ -234,7 +234,8 @@ export default function DayDetailPage() {
                 {formattedDate} · {formattedYear}
               </p>
 
-              <div className="flex items-center gap-4 mb-4">
+              <div className="flex items-start gap-3">
+                {/* Icono */}
                 <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0"
                   style={{ backgroundColor: `${textCol}22` }}>
                   {isVacaciones ? (
@@ -250,7 +251,8 @@ export default function DayDetailPage() {
                   )}
                 </div>
 
-                <div>
+                {/* Número y descripción */}
+                <div className="flex-1 min-w-0">
                   {!data.asignacion ? (
                     <h2 style={{ color: textCol }} className="text-2xl font-black leading-none opacity-40">
                       Sin turno
@@ -268,42 +270,32 @@ export default function DayDetailPage() {
                     </>
                   )}
                 </div>
-              </div>
 
-              {turno && !isRest && (heroHoraInicio || heroHoraFin) && (
-                <div className="flex items-center gap-3 flex-wrap">
-                  {/* Horario inicio → fin */}
-                  <div className="flex items-baseline gap-2">
-                    <span style={{ color: textCol }} className="text-2xl font-black tabular-nums leading-none">
+                {/* Horas + duración alineadas a la derecha */}
+                {turno && !isRest && (heroHoraInicio || heroHoraFin) && (
+                  <div className="shrink-0 flex flex-col items-end gap-0.5">
+                    <span style={{ color: textCol }} className="text-xl font-black tabular-nums leading-tight">
                       {heroHoraInicio ?? '—'}
                     </span>
-                    <span style={{ color: textCol, opacity: 0.45 }} className="text-lg font-light">→</span>
-                    <span style={{ color: textCol }} className="text-2xl font-black tabular-nums leading-none">
+                    <span style={{ color: textCol, opacity: 0.35 }} className="text-xs leading-none">
+                      ↓
+                    </span>
+                    <span style={{ color: textCol }} className="text-xl font-black tabular-nums leading-tight">
                       {heroHoraFin ?? '—'}
                     </span>
-                  </div>
-
-                  {/* Badges: duración y km */}
-                  <div className="flex items-center gap-2 ml-auto">
                     {totalMinutos && (
-                      <span
-                        style={{ backgroundColor: `${textCol}22`, color: textCol }}
-                        className="text-xs font-bold px-2.5 py-1 rounded-full"
-                      >
+                      <span style={{ color: textCol }} className="text-xl font-black leading-tight mt-1 opacity-80">
                         {formatDuration(totalMinutos)}
                       </span>
                     )}
                     {turno.km_totales && (
-                      <span
-                        style={{ backgroundColor: `${textCol}22`, color: textCol }}
-                        className="text-xs font-bold px-2.5 py-1 rounded-full"
-                      >
+                      <span style={{ color: textCol }} className="text-sm font-semibold leading-tight mt-0.5 opacity-60">
                         {turno.km_totales} km
                       </span>
                     )}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* ── Contenido principal ────────────────────────────── */}
@@ -383,15 +375,34 @@ export default function DayDetailPage() {
                   </div>
 
                   <div className="divide-y divide-gray-50">
+                    {/* Presentación */}
+                    {heroHoraInicio && (
+                      <BookendRow
+                        tipo="inicio"
+                        hora={heroHoraInicio}
+                        estacion={nombreEstacion(data.servicios[0].origen)}
+                      />
+                    )}
+
+                    {/* Servicios: siempre con línea hacia abajo (conectan con Fin de jornada) */}
                     {data.servicios.map((svc, idx) => (
                       <ServiceRow
                         key={svc.id}
                         service={svc}
                         isFirst={idx === 0}
-                        isLast={idx === data.servicios.length - 1}
+                        isLast={!heroHoraFin && idx === data.servicios.length - 1}
                         nombreEstacion={nombreEstacion}
                       />
                     ))}
+
+                    {/* Fin de jornada */}
+                    {heroHoraFin && (
+                      <BookendRow
+                        tipo="fin"
+                        hora={heroHoraFin}
+                        estacion={nombreEstacion(data.servicios[data.servicios.length - 1].destino)}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -611,6 +622,46 @@ function ServiceRow({ service, isFirst, isLast, nombreEstacion }: {
               )}
             </div>
           </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── BookendRow ─────────────────────────────────────────────────
+
+function BookendRow({ tipo, hora, estacion }: {
+  tipo: 'inicio' | 'fin'
+  hora: string
+  estacion?: string | null
+}) {
+  const isInicio = tipo === 'inicio'
+  return (
+    <div className="flex gap-3 px-4 py-3">
+      {/* Columna izquierda: punto + línea (igual que ServiceRow) */}
+      <div className="flex flex-col items-center shrink-0" style={{ width: 24 }}>
+        <div
+          className="w-3 h-3 rounded-full shrink-0 mt-[3px]"
+          style={{ backgroundColor: isInicio ? '#22c55e' : '#9ca3af' }}
+        />
+        {isInicio && <div className="flex-1 w-0.5 bg-gray-200 my-1 min-h-[24px]" />}
+      </div>
+
+      {/* Columna derecha */}
+      <div className="flex-1 min-w-0 pb-1">
+        <div className="flex items-center gap-2">
+          <p className={cn(
+            'text-xs font-bold uppercase tracking-wide',
+            isInicio ? 'text-green-600' : 'text-gray-400',
+          )}>
+            {isInicio ? 'Presentación' : 'Fin de jornada'}
+          </p>
+          <span className="ml-auto text-xs font-mono font-bold text-gray-600 tabular-nums">
+            {hora}
+          </span>
+        </div>
+        {estacion && (
+          <p className="text-xs text-gray-400 mt-0.5">{estacion}</p>
         )}
       </div>
     </div>
