@@ -642,7 +642,7 @@ function BookendRow({ tipo, hora, estacion }: {
       {/* Columna derecha */}
       <div className="flex-1 min-w-0 pb-1">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
             {isInicio ? 'Presentación' : 'Fin de jornada'}
           </p>
           <span className="ml-auto text-xs font-semibold text-gray-600">
