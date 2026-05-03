@@ -87,6 +87,7 @@ export default function SwapsPage() {
 
     loadSolicitudes()
     deudas.reload()
+    window.dispatchEvent(new CustomEvent('calendar:refresh'))
   }
 
   async function handleCancel(id: number) {
@@ -615,6 +616,9 @@ function NewSwapForm({
     }
 
     setSending(false)
+    if (modo === 'externo') {
+      window.dispatchEvent(new CustomEvent('calendar:refresh'))
+    }
     onSuccess()
   }
 

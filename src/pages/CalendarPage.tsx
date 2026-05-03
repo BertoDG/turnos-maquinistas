@@ -20,7 +20,7 @@ export default function CalendarPage() {
 
   const targetId = maquinistaId || profile?.id
 
-  const { months, loading, error, loadMorePast, loadMoreFuture } = useCalendar({
+  const { months, loading, error, loadMorePast, loadMoreFuture, refetch } = useCalendar({
     maquinistaId: targetId,
   })
 
@@ -28,6 +28,15 @@ export default function CalendarPage() {
   const scrolledRef = useRef(false)
 
   const now = new Date()
+
+  // Escucha el evento global para recargar datos tras un cambio de turno
+  useEffect(() => {
+    // Solo el calendario propio (sin maquinistaId en params) reacciona al evento
+    if (maquinistaId) return
+    function onRefresh() { refetch() }
+    window.addEventListener('calendar:refresh', onRefresh)
+    return () => window.removeEventListener('calendar:refresh', onRefresh)
+  }, [refetch, maquinistaId])
 
   // Scroll al mes actual solo la primera vez que los datos están listos
   useEffect(() => {
