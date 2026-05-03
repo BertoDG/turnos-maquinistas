@@ -178,6 +178,26 @@ export default function DayDetailPage() {
   const todayStr = new Date().toISOString().slice(0, 10)
   const isToday  = dateStr === todayStr
 
+  // Horas de presentación / fin de jornada para mostrar en el hero
+  const heroHoraInicio: string | null =
+    hhmm(turno?.hora_inicio)
+    ?? guardiaVirtual?.horaInicio
+    ?? (data.servicios.length > 0 ? formatTime(data.servicios[0].hora_salida) : null)
+
+  const heroHoraFin: string | null =
+    hhmm(turno?.hora_fin)
+    ?? guardiaVirtual?.horaFin
+    ?? (data.servicios.length > 0 ? formatTime(data.servicios[data.servicios.length - 1].hora_llegada) : null)
+
+  // Duración total: usar valor de BD si existe, si no calcular de las horas
+  const totalMinutos: number | null = (() => {
+    if (turno?.duracion_minutos) return turno.duracion_minutos
+    if (!heroHoraInicio || !heroHoraFin) return null
+    let start = toMin(heroHoraInicio), end = toMin(heroHoraFin)
+    if (end <= start) end += 1440
+    return end - start
+  })()
+
   // ── Pantalla completa (overlay sin animación) ───────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white"
@@ -250,24 +270,38 @@ export default function DayDetailPage() {
                 </div>
               </div>
 
-              {turno && !isRest && (turno.duracion_minutos || turno.km_totales) && (
-                <div className="flex gap-4">
-                  {turno.duracion_minutos && (
-                    <div className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5" style={{ color: textCol, opacity: 0.6 }} />
-                      <span style={{ color: textCol }} className="text-sm font-semibold opacity-90">
-                        {formatDuration(turno.duracion_minutos)}
+              {turno && !isRest && (heroHoraInicio || heroHoraFin) && (
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Horario inicio → fin */}
+                  <div className="flex items-baseline gap-2">
+                    <span style={{ color: textCol }} className="text-2xl font-black tabular-nums leading-none">
+                      {heroHoraInicio ?? '—'}
+                    </span>
+                    <span style={{ color: textCol, opacity: 0.45 }} className="text-lg font-light">→</span>
+                    <span style={{ color: textCol }} className="text-2xl font-black tabular-nums leading-none">
+                      {heroHoraFin ?? '—'}
+                    </span>
+                  </div>
+
+                  {/* Badges: duración y km */}
+                  <div className="flex items-center gap-2 ml-auto">
+                    {totalMinutos && (
+                      <span
+                        style={{ backgroundColor: `${textCol}22`, color: textCol }}
+                        className="text-xs font-bold px-2.5 py-1 rounded-full"
+                      >
+                        {formatDuration(totalMinutos)}
                       </span>
-                    </div>
-                  )}
-                  {turno.km_totales && (
-                    <div className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5" style={{ color: textCol, opacity: 0.6 }} />
-                      <span style={{ color: textCol }} className="text-sm font-semibold opacity-90">
+                    )}
+                    {turno.km_totales && (
+                      <span
+                        style={{ backgroundColor: `${textCol}22`, color: textCol }}
+                        className="text-xs font-bold px-2.5 py-1 rounded-full"
+                      >
                         {turno.km_totales} km
                       </span>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -359,28 +393,6 @@ export default function DayDetailPage() {
                       />
                     ))}
                   </div>
-
-                  {(turno?.hora_inicio || data.servicios.length > 1) && (
-                    <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center gap-2">
-                      <Clock className="w-3.5 h-3.5 text-gray-400" />
-                      <span className="text-xs text-gray-500">
-                        {turno?.hora_inicio && turno?.hora_fin
-                          ? <>
-                              <span className="font-semibold text-gray-700">{hhmm(turno.hora_inicio)}</span>
-                              {' → '}
-                              <span className="font-semibold text-gray-700">{hhmm(turno.hora_fin)}</span>
-                              <span className="text-gray-400 ml-1">(presentación · fin jornada)</span>
-                            </>
-                          : <>
-                              {formatTime(data.servicios[0].hora_salida)}
-                              {' → '}
-                              {formatTime(data.servicios[data.servicios.length - 1].hora_llegada)}
-                              {data.servicios[data.servicios.length - 1].dia_siguiente && ' (+1 día)'}
-                            </>
-                        }
-                      </span>
-                    </div>
-                  )}
                 </div>
               )}
 
