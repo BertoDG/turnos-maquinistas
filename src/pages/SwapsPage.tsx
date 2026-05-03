@@ -566,8 +566,8 @@ function NewSwapForm({
         mensaje: mensaje || null,
       })
     } else {
-      // Modo externo: insertar solicitud completada + actualizar asignación
-      if (!myDate || !companeroDate || !selectedTurno) { setSending(false); return }
+      // Modo externo: una sola fecha, se aplica directamente
+      if (!companeroDate || !selectedTurno) { setSending(false); return }
 
       const { data: sol } = await supabase
         .from('solicitudes_cambio')
@@ -576,7 +576,7 @@ function NewSwapForm({
           receptor_id: null,
           receptor_externo: receptorExterno.trim() || 'Maquinista externo',
           turno_receptor_id: selectedTurno.id,
-          fecha_solicitante: myDate,
+          fecha_solicitante: companeroDate,
           fecha_receptor: companeroDate,
           mensaje: mensaje || null,
           estado: 'completado',
@@ -585,7 +585,6 @@ function NewSwapForm({
         .single()
 
       if (sol) {
-        // Buscar asignación existente del solicitante en la fecha destino
         const { data: asig } = await supabase
           .from('asignaciones')
           .select('id, turno_id')
@@ -621,7 +620,7 @@ function NewSwapForm({
 
   const canSubmit = modo === 'registrado'
     ? !!(myDate && companeroId && companeroDate)
-    : !!(myDate && companeroDate && selectedTurno)
+    : !!(companeroDate && selectedTurno)
 
   return (
     <form onSubmit={handleSubmit} className="mt-3 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -649,17 +648,17 @@ function NewSwapForm({
 
       <div className="p-4 flex flex-col gap-3">
 
-        {/* Mi fecha */}
-        <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1">
-            Mi fecha <span className="text-gray-400">(turno que ofrezco)</span>
-          </label>
-          <input type="date" value={myDate} onChange={e => setMyDate(e.target.value)}
-            className={inputCls} required />
-        </div>
-
         {modo === 'registrado' ? (
           <>
+            {/* Mi fecha */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Mi fecha <span className="text-gray-400">(turno que ofrezco)</span>
+              </label>
+              <input type="date" value={myDate} onChange={e => setMyDate(e.target.value)}
+                className={inputCls} required />
+            </div>
+
             {/* Selector compañero */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Compañero</label>
@@ -699,35 +698,35 @@ function NewSwapForm({
           </>
         ) : (
           <>
-            {/* Nombre / matrícula del maquinista externo */}
+            {/* Fecha del cambio */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">
-                Nombre o matrícula del maquinista <span className="text-gray-400">(opcional)</span>
-              </label>
-              <input
-                type="text"
-                value={receptorExterno}
-                onChange={e => setReceptorExterno(e.target.value)}
-                placeholder="Ej: García López o 87654"
-                className={inputCls}
-              />
-            </div>
-
-            {/* Fecha en la que el usuario asume el turno externo */}
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">
-                Fecha en la que haré el turno
+                Fecha del cambio
               </label>
               <input type="date" value={companeroDate} onChange={e => setCompaneroDate(e.target.value)}
                 className={inputCls} required />
             </div>
 
-            {/* Buscador de turno */}
+            {/* Turno que se hace ese día */}
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">
-                Turno que voy a hacer
+                Turno que haré ese día
               </label>
               <TurnoPicker value={selectedTurno} onChange={setSelectedTurno} />
+            </div>
+
+            {/* Nombre / matrícula del maquinista externo */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Maquinista externo <span className="text-gray-400">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={receptorExterno}
+                onChange={e => setReceptorExterno(e.target.value)}
+                placeholder="Nombre o matrícula"
+                className={inputCls}
+              />
             </div>
           </>
         )}
