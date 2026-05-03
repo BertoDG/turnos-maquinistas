@@ -74,6 +74,7 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
   if (!turno) {
     return (
       <button
+        data-date={day.dateStr}
         onClick={() => onClick?.(day)}
         className={cn(
           'relative aspect-square rounded-xl flex flex-col p-1.5',
@@ -128,6 +129,7 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
 
   return (
     <button
+      data-date={day.dateStr}
       onClick={() => onClick?.(day)}
       style={{ backgroundColor: bg, borderColor: border }}
       className={cn(
