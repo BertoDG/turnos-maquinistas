@@ -144,8 +144,8 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
       {/* Badge de cambio de turno (esquina superior derecha) */}
       {isCambio && (
         <div
-          style={{ backgroundColor: cambioColors.text, color: cambioColors.bg }}
-          className="absolute top-0 right-0 w-[1.4em] h-[1.4em] rounded-tr-xl rounded-bl-xl
+          style={{ fontSize: dayNumFontSize(), backgroundColor: cambioColors.text, color: cambioColors.bg }}
+          className="absolute top-0 right-0 w-[1.7em] h-[1.7em] rounded-tr-xl rounded-bl-xl
             flex items-center justify-center"
           aria-label="Turno cambiado"
         >
