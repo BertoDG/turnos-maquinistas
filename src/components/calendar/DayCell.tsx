@@ -19,7 +19,7 @@ function turnoCodeFontSize(len: number): string {
 }
 
 function timeFontSize(): string {
-  return 'clamp(7px, 1.8vw, 12px)'
+  return 'clamp(5.5px, 1.4vw, 9px)'
 }
 
 // ── Número de día con cuadro fusionado a la esquina ──────────────────────────
@@ -153,31 +153,22 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
         </div>
       )}
 
-      {/* Horas junto al badge: inicio arriba, fin debajo */}
-      {mostrarHoras && showTimes && (
-        <div
-          style={{
-            fontSize: timeFontSize(),
-            color: turnoText,
-            opacity: 0.8,
-            left: 'calc(1.7em + 2px)',
-            right: 0,
-          }}
-          className="absolute top-0 flex flex-col items-center leading-none gap-px pt-px"
-        >
-          {horaInicio && <span className="font-medium">{horaInicio}</span>}
-          {horaFin    && <span className="font-medium">{horaFin}</span>}
-        </div>
-      )}
-
-      {/* Código del turno: centrado en el resto de la celda */}
-      <div className="flex-1 flex items-center justify-center" style={{ paddingTop: '1em' }}>
+      {/* Código del turno + horas en la misma columna */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-px" style={{ paddingTop: '1em' }}>
         <span
           style={{ color: turnoText, fontSize: turnoCodeFontSize(turno.numero.length) }}
           className="font-bold leading-none text-center"
         >
           {turno.numero}
         </span>
+        {mostrarHoras && showTimes && (
+          <span
+            style={{ color: turnoText, fontSize: timeFontSize(), opacity: 0.72 }}
+            className="font-medium leading-none text-center whitespace-nowrap"
+          >
+            {horaInicio}·{horaFin}
+          </span>
+        )}
       </div>
     </button>
   )
