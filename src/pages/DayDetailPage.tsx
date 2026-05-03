@@ -150,7 +150,7 @@ export default function DayDetailPage() {
           servicios = (svcs ?? []) as ServicioTurno[]
         }
         setData({ asignacion: asig as typeof data.asignacion, servicios })
-        window.dispatchEvent(new CustomEvent('calendar:refresh'))
+        window.dispatchEvent(new CustomEvent('calendar:refresh', { detail: { date: dateStr } }))
       }
     }
   }

@@ -20,28 +20,26 @@ export default function CalendarPage() {
 
   const targetId = maquinistaId || profile?.id
 
-  const { months, loading, error, loadMorePast, loadMoreFuture, refetch } = useCalendar({
+  const { months, loading, error, loadMorePast, loadMoreFuture, refreshDay } = useCalendar({
     maquinistaId: targetId,
   })
 
-  const monthRefs        = useRef<Map<string, HTMLDivElement>>(new Map())
-  const scrolledRef      = useRef(false)
-  const pendingScrollRef = useRef<string | null>(null)   // fecha 'YYYY-MM-DD' a centrar tras refetch
+  const monthRefs   = useRef<Map<string, HTMLDivElement>>(new Map())
+  const scrolledRef = useRef(false)
 
   const now = new Date()
 
-  // Escucha el evento global para recargar datos tras un cambio de turno
+  // Escucha el evento global para recargar solo la fecha que cambió, sin desmontar el calendario
   useEffect(() => {
     // Solo el calendario propio (sin maquinistaId en params) reacciona al evento
     if (maquinistaId) return
     function onRefresh(e: Event) {
       const date = (e as CustomEvent<{ date?: string }>).detail?.date
-      if (date) pendingScrollRef.current = date
-      refetch()
+      if (date) refreshDay(date)
     }
     window.addEventListener('calendar:refresh', onRefresh)
     return () => window.removeEventListener('calendar:refresh', onRefresh)
-  }, [refetch, maquinistaId])
+  }, [refreshDay, maquinistaId])
 
   // Scroll al mes actual solo la primera vez que los datos están listos
   useEffect(() => {
@@ -56,33 +54,6 @@ export default function CalendarPage() {
 
     container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
     scrolledRef.current = true
-  }, [loading, months.length, scrollRef])
-
-  // Scroll al día cambiado tras un refetch solicitado externamente
-  useEffect(() => {
-    if (loading || !pendingScrollRef.current || months.length === 0) return
-
-    const container = scrollRef?.current
-    if (!container) return
-
-    // Intentar scroll al día exacto; si no existe el ref, ir al mes
-    const dayEl = container.querySelector<HTMLElement>(`[data-date="${pendingScrollRef.current}"]`)
-    if (dayEl) {
-      const top = dayEl.getBoundingClientRect().top
-        - container.getBoundingClientRect().top
-        + container.scrollTop
-        - 8  // pequeño margen superior
-      container.scrollTo({ top, behavior: 'smooth' })
-    } else {
-      const d = new Date(pendingScrollRef.current + 'T00:00:00')
-      const key = `${d.getFullYear()}-${d.getMonth()}`
-      const monthEl = monthRefs.current.get(key)
-      if (monthEl) {
-        container.scrollTo({ top: topOf(monthEl, container), behavior: 'smooth' })
-      }
-    }
-
-    pendingScrollRef.current = null
   }, [loading, months.length, scrollRef])
 
   function scrollToToday() {

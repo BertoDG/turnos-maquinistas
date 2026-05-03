@@ -68,6 +68,8 @@ export default function SwapsPage() {
     }
 
     // Aceptar: primero marcar como aceptado, luego ejecutar el intercambio
+    const sol = solicitudes.find(s => s.id === id)
+
     await supabase
       .from('solicitudes_cambio')
       .update({ estado: 'aceptado' })
@@ -83,11 +85,16 @@ export default function SwapsPage() {
         .from('solicitudes_cambio')
         .update({ estado: 'pendiente' })
         .eq('id', id)
+    } else if (sol) {
+      // Actualizar en el calendario solo las fechas afectadas (sin desmontar ni scroll)
+      window.dispatchEvent(new CustomEvent('calendar:refresh', { detail: { date: sol.fecha_receptor } }))
+      if (sol.fecha_solicitante !== sol.fecha_receptor) {
+        window.dispatchEvent(new CustomEvent('calendar:refresh', { detail: { date: sol.fecha_solicitante } }))
+      }
     }
 
     loadSolicitudes()
     deudas.reload()
-    window.dispatchEvent(new CustomEvent('calendar:refresh'))
   }
 
   async function handleCancel(id: number) {
@@ -617,7 +624,7 @@ function NewSwapForm({
 
     setSending(false)
     if (modo === 'externo') {
-      window.dispatchEvent(new CustomEvent('calendar:refresh'))
+      window.dispatchEvent(new CustomEvent('calendar:refresh', { detail: { date: companeroDate } }))
     }
     onSuccess()
   }

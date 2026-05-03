@@ -16,6 +16,7 @@ interface UseCalendarReturn {
   loadMorePast: () => void
   loadMoreFuture: () => void
   refetch: () => void
+  refreshDay: (dateStr: string) => Promise<void>
 }
 
 const MONTHS_BUFFER = 3 // Meses a cargar en cada dirección
@@ -107,6 +108,29 @@ export function useCalendar({
     fetchAsignaciones()
   }, [fetchAsignaciones])
 
+  /** Recarga solo la asignación de una fecha concreta y actualiza el estado en memoria
+   *  sin tocar el resto del calendario ni activar loading global. */
+  const refreshDay = useCallback(async (dateStr: string) => {
+    if (!maquinistaId) return
+    const { data } = await supabase
+      .from('asignaciones')
+      .select(`
+        *,
+        turno:turnos!asignaciones_turno_id_fkey(
+          *,
+          servicios:servicios_turno(orden, hora_llegada)
+        )
+      `)
+      .eq('maquinista_id', maquinistaId)
+      .eq('fecha', dateStr)
+      .maybeSingle()
+
+    setAsignaciones(prev => {
+      const sinEseDia = prev.filter(a => a.fecha !== dateStr)
+      return data ? [...sinEseDia, data as Asignacion] : sinEseDia
+    })
+  }, [maquinistaId])
+
   function loadMorePast() {
     setRangeStart((prev) => normalize(prev.year, prev.month - MONTHS_BUFFER))
   }
@@ -122,5 +146,6 @@ export function useCalendar({
     loadMorePast,
     loadMoreFuture,
     refetch: fetchAsignaciones,
+    refreshDay,
   }
 }
