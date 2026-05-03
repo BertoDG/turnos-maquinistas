@@ -112,7 +112,9 @@ export interface Asignacion {
 export interface SolicitudCambio {
   id: number
   solicitante_id: string
-  receptor_id: string
+  receptor_id: string | null          // null en cambios con maquinistas externos
+  receptor_externo: string | null      // nombre/matrícula del maquinista externo
+  turno_receptor_id: number | null     // turno elegido en cambios externos
   fecha_solicitante: string
   fecha_receptor: string
   estado: SolicitudEstado

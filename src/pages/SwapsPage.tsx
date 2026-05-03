@@ -3,12 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDeudas, type DeudaBalance } from '@/hooks/useDeudas'
-import type { SolicitudCambio, Profile } from '@/types'
+import type { SolicitudCambio, Profile, Turno } from '@/types'
 import { formatDate, getInitials } from '@/lib/utils'
 import {
   ArrowLeftRight, Check, X, Loader2,
   Plus, ChevronDown, Send, TrendingUp, TrendingDown,
-  ChevronRight, CalendarDays,
+  ChevronRight, CalendarDays, Search, UserX, Users,
 } from 'lucide-react'
 
 type Tab = 'recibidas' | 'enviadas' | 'días'
@@ -47,7 +47,8 @@ export default function SwapsPage() {
       .select(`
         *,
         solicitante:profiles!solicitudes_cambio_solicitante_id_fkey(*),
-        receptor:profiles!solicitudes_cambio_receptor_id_fkey(*)
+        receptor:profiles!solicitudes_cambio_receptor_id_fkey(*),
+        turno_receptor:turnos!solicitudes_cambio_turno_receptor_id_fkey(id, numero, tipo, color_hex, text_color_hex, hora_inicio, hora_fin)
       `)
       .eq(field, profile!.id)
       .order('created_at', { ascending: false })
@@ -379,23 +380,35 @@ function SolicitudCard({
   const config = ESTADO_CONFIG[solicitud.estado]
   const other = isReceived ? solicitud.solicitante : solicitud.receptor
   const otherProfile = other as Profile | undefined
+  const isExterno = !solicitud.receptor_id && !!solicitud.receptor_externo
+  const turnoReceptor = solicitud.turno_receptor as Turno | undefined
+
+  const otherName = isExterno
+    ? solicitud.receptor_externo!
+    : otherProfile
+      ? `${otherProfile.apellidos}, ${otherProfile.nombre}`
+      : 'Compañero'
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-50">
-        <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center
-          text-gray-600 font-bold text-xs shrink-0">
-          {otherProfile ? getInitials(otherProfile.nombre, otherProfile.apellidos) : '??'}
-        </div>
+        {isExterno ? (
+          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+            <UserX className="w-4 h-4 text-amber-600" />
+          </div>
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center
+            text-gray-600 font-bold text-xs shrink-0">
+            {otherProfile ? getInitials(otherProfile.nombre, otherProfile.apellidos) : '??'}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">
-            {otherProfile
-              ? `${otherProfile.apellidos}, ${otherProfile.nombre}`
-              : 'Compañero'}
-          </p>
+          <p className="text-sm font-semibold text-gray-900 truncate">{otherName}</p>
           <p className="text-xs text-gray-500">
-            {formatDate(solicitud.created_at, "dd/MM/yyyy 'a las' HH:mm")}
+            {isExterno
+              ? 'Maquinista externo · sin app'
+              : formatDate(solicitud.created_at, "dd/MM/yyyy 'a las' HH:mm")}
           </p>
         </div>
         <span className={`text-[11px] font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${config.bg} ${config.text}`}>
@@ -419,11 +432,23 @@ function SolicitudCard({
 
         <div className="flex-1 text-center">
           <p className="text-[10px] text-gray-400 font-medium mb-1">
-            {isReceived ? 'Tu turno' : 'Su turno'}
+            {isExterno ? 'Turno que asumo' : isReceived ? 'Tu turno' : 'Su turno'}
           </p>
-          <p className="text-sm font-bold text-gray-900">
-            {formatDate(solicitud.fecha_receptor, 'dd MMM')}
-          </p>
+          {isExterno && turnoReceptor ? (
+            <div className="flex flex-col items-center gap-0.5">
+              <span
+                className="text-xs font-bold px-2 py-0.5 rounded-lg"
+                style={{ backgroundColor: turnoReceptor.color_hex, color: turnoReceptor.text_color_hex }}
+              >
+                {turnoReceptor.numero}
+              </span>
+              <p className="text-xs text-gray-500">{formatDate(solicitud.fecha_receptor, 'dd MMM')}</p>
+            </div>
+          ) : (
+            <p className="text-sm font-bold text-gray-900">
+              {formatDate(solicitud.fecha_receptor, 'dd MMM')}
+            </p>
+          )}
         </div>
       </div>
 
@@ -479,6 +504,8 @@ function SolicitudCard({
 
 // ── NewSwapForm ───────────────────────────────────────
 
+type SwapModo = 'registrado' | 'externo'
+
 function NewSwapForm({
   defaultDate, currentUserId, onSuccess, onCancel,
 }: {
@@ -487,13 +514,22 @@ function NewSwapForm({
   onSuccess: () => void
   onCancel: () => void
 }) {
+  const [modo, setModo] = useState<SwapModo>('registrado')
+
+  // Campos comunes
   const [myDate, setMyDate] = useState(defaultDate ?? '')
-  const [companeroId, setCompaneroId] = useState('')
   const [companeroDate, setCompaneroDate] = useState('')
   const [mensaje, setMensaje] = useState('')
+  const [sending, setSending] = useState(false)
+
+  // Campos modo registrado
+  const [companeroId, setCompaneroId] = useState('')
   const [companions, setCompanions] = useState<Profile[]>([])
   const [deudaInfo, setDeudaInfo] = useState<{ meDebeCount: number; leDeboCount: number } | null>(null)
-  const [sending, setSending] = useState(false)
+
+  // Campos modo externo
+  const [receptorExterno, setReceptorExterno] = useState('')
+  const [selectedTurno, setSelectedTurno] = useState<Turno | null>(null)
 
   const { byCompanero } = useDeudas(currentUserId)
 
@@ -507,100 +543,385 @@ function NewSwapForm({
       .then(({ data }) => setCompanions((data ?? []) as Profile[]))
   }, [currentUserId])
 
-  // Mostrar deuda cuando se selecciona compañero
   useEffect(() => {
     if (!companeroId) { setDeudaInfo(null); return }
     const bal = byCompanero[companeroId]
     setDeudaInfo(bal ? { meDebeCount: bal.meDebeCount, leDeboCount: bal.leDeboCount } : null)
   }, [companeroId, byCompanero])
 
+  const inputCls = `w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
+    focus:outline-none focus:ring-2 focus:ring-red-400`
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!myDate || !companeroId || !companeroDate) return
     setSending(true)
-    await supabase.from('solicitudes_cambio').insert({
-      solicitante_id: currentUserId,
-      receptor_id: companeroId,
-      fecha_solicitante: myDate,
-      fecha_receptor: companeroDate,
-      mensaje: mensaje || null,
-    })
+
+    if (modo === 'registrado') {
+      if (!myDate || !companeroId || !companeroDate) { setSending(false); return }
+      await supabase.from('solicitudes_cambio').insert({
+        solicitante_id: currentUserId,
+        receptor_id: companeroId,
+        fecha_solicitante: myDate,
+        fecha_receptor: companeroDate,
+        mensaje: mensaje || null,
+      })
+    } else {
+      // Modo externo: insertar solicitud completada + actualizar asignación
+      if (!myDate || !companeroDate || !selectedTurno) { setSending(false); return }
+
+      const { data: sol } = await supabase
+        .from('solicitudes_cambio')
+        .insert({
+          solicitante_id: currentUserId,
+          receptor_id: null,
+          receptor_externo: receptorExterno.trim() || 'Maquinista externo',
+          turno_receptor_id: selectedTurno.id,
+          fecha_solicitante: myDate,
+          fecha_receptor: companeroDate,
+          mensaje: mensaje || null,
+          estado: 'completado',
+        })
+        .select('id')
+        .single()
+
+      if (sol) {
+        // Buscar asignación existente del solicitante en la fecha destino
+        const { data: asig } = await supabase
+          .from('asignaciones')
+          .select('id, turno_id')
+          .eq('maquinista_id', currentUserId)
+          .eq('fecha', companeroDate)
+          .maybeSingle()
+
+        if (asig) {
+          await supabase
+            .from('asignaciones')
+            .update({
+              turno_id: selectedTurno.id,
+              turno_id_original: asig.turno_id,
+              cambio_id: sol.id,
+            })
+            .eq('id', asig.id)
+        } else {
+          await supabase
+            .from('asignaciones')
+            .insert({
+              maquinista_id: currentUserId,
+              fecha: companeroDate,
+              turno_id: selectedTurno.id,
+              cambio_id: sol.id,
+            })
+        }
+      }
+    }
+
     setSending(false)
     onSuccess()
   }
 
+  const canSubmit = modo === 'registrado'
+    ? !!(myDate && companeroId && companeroDate)
+    : !!(myDate && companeroDate && selectedTurno)
+
   return (
-    <form onSubmit={handleSubmit} className="mt-3 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
-      <h3 className="text-sm font-bold text-gray-800">Nueva solicitud de cambio</h3>
-
-      <div>
-        <label className="text-xs font-medium text-gray-600 block mb-1">Mi fecha (turno que ofrezco)</label>
-        <input type="date" value={myDate} onChange={e => setMyDate(e.target.value)}
-          className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-            focus:outline-none focus:ring-2 focus:ring-red-400" required />
+    <form onSubmit={handleSubmit} className="mt-3 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* Toggle modo */}
+      <div className="flex border-b border-gray-100">
+        {([
+          { key: 'registrado' as SwapModo, label: 'Con compañero', Icon: Users },
+          { key: 'externo'    as SwapModo, label: 'Externo / sin app', Icon: UserX },
+        ]).map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => { setModo(key); setCompaneroId(''); setSelectedTurno(null) }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold
+              transition-colors
+              ${modo === key
+                ? 'bg-red-50 text-red-600 border-b-2 border-red-500'
+                : 'text-gray-500 hover:bg-gray-50'}`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      <div>
-        <label className="text-xs font-medium text-gray-600 block mb-1">Compañero</label>
-        <select value={companeroId} onChange={e => setCompaneroId(e.target.value)}
-          className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-            focus:outline-none focus:ring-2 focus:ring-red-400" required>
-          <option value="">Selecciona compañero...</option>
-          {companions.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.apellidos}, {c.nombre} ({c.matricula})
-            </option>
-          ))}
-        </select>
+      <div className="p-4 flex flex-col gap-3">
 
-        {/* Indicador de deuda con el compañero seleccionado */}
-        {deudaInfo && (deudaInfo.meDebeCount > 0 || deudaInfo.leDeboCount > 0) && (
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            {deudaInfo.meDebeCount > 0 && (
-              <span className="text-[11px] font-semibold px-2 py-1 rounded-lg
-                bg-green-50 text-green-700 border border-green-100">
-                Te debe {deudaInfo.meDebeCount} día{deudaInfo.meDebeCount > 1 ? 's' : ''}
-              </span>
-            )}
-            {deudaInfo.leDeboCount > 0 && (
-              <span className="text-[11px] font-semibold px-2 py-1 rounded-lg
-                bg-amber-50 text-amber-700 border border-amber-100">
-                Le debes {deudaInfo.leDeboCount} día{deudaInfo.leDeboCount > 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
+        {/* Mi fecha */}
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1">
+            Mi fecha <span className="text-gray-400">(turno que ofrezco)</span>
+          </label>
+          <input type="date" value={myDate} onChange={e => setMyDate(e.target.value)}
+            className={inputCls} required />
+        </div>
+
+        {modo === 'registrado' ? (
+          <>
+            {/* Selector compañero */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Compañero</label>
+              <select value={companeroId} onChange={e => setCompaneroId(e.target.value)}
+                className={inputCls} required>
+                <option value="">Selecciona compañero...</option>
+                {companions.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.apellidos}, {c.nombre} ({c.matricula})
+                  </option>
+                ))}
+              </select>
+              {deudaInfo && (deudaInfo.meDebeCount > 0 || deudaInfo.leDeboCount > 0) && (
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  {deudaInfo.meDebeCount > 0 && (
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-lg bg-green-50 text-green-700 border border-green-100">
+                      Te debe {deudaInfo.meDebeCount} día{deudaInfo.meDebeCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {deudaInfo.leDeboCount > 0 && (
+                    <span className="text-[11px] font-semibold px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-100">
+                      Le debes {deudaInfo.leDeboCount} día{deudaInfo.leDeboCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Fecha compañero */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Fecha del compañero <span className="text-gray-400">(turno que quiero)</span>
+              </label>
+              <input type="date" value={companeroDate} onChange={e => setCompaneroDate(e.target.value)}
+                className={inputCls} required />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Nombre / matrícula del maquinista externo */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Nombre o matrícula del maquinista <span className="text-gray-400">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                value={receptorExterno}
+                onChange={e => setReceptorExterno(e.target.value)}
+                placeholder="Ej: García López o 87654"
+                className={inputCls}
+              />
+            </div>
+
+            {/* Fecha en la que el usuario asume el turno externo */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Fecha en la que haré el turno
+              </label>
+              <input type="date" value={companeroDate} onChange={e => setCompaneroDate(e.target.value)}
+                className={inputCls} required />
+            </div>
+
+            {/* Buscador de turno */}
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">
+                Turno que voy a hacer
+              </label>
+              <TurnoPicker value={selectedTurno} onChange={setSelectedTurno} />
+            </div>
+          </>
         )}
-      </div>
 
-      <div>
-        <label className="text-xs font-medium text-gray-600 block mb-1">Fecha del compañero (turno que quiero)</label>
-        <input type="date" value={companeroDate} onChange={e => setCompaneroDate(e.target.value)}
-          className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-            focus:outline-none focus:ring-2 focus:ring-red-400" required />
-      </div>
+        {/* Mensaje opcional */}
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1">Mensaje (opcional)</label>
+          <textarea value={mensaje} onChange={e => setMensaje(e.target.value)}
+            placeholder="Explica el motivo del cambio..."
+            rows={2}
+            className={`${inputCls} resize-none`} />
+        </div>
 
-      <div>
-        <label className="text-xs font-medium text-gray-600 block mb-1">Mensaje (opcional)</label>
-        <textarea value={mensaje} onChange={e => setMensaje(e.target.value)}
-          placeholder="Explica el motivo del cambio..."
-          rows={2}
-          className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-            focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
-      </div>
-
-      <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onCancel}
-          className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600
-            hover:bg-gray-50 transition-colors">
-          Cancelar
-        </button>
-        <button type="submit" disabled={sending}
-          className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold
-            hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-          {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          Enviar
-        </button>
+        {/* Botones */}
+        <div className="flex gap-2 pt-1">
+          <button type="button" onClick={onCancel}
+            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600
+              hover:bg-gray-50 transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" disabled={sending || !canSubmit}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold
+              hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {modo === 'externo' ? 'Aplicar cambio' : 'Enviar solicitud'}
+          </button>
+        </div>
       </div>
     </form>
+  )
+}
+
+// ── TurnoPicker ───────────────────────────────────────
+
+function TurnoPicker({ value, onChange }: {
+  value: Turno | null
+  onChange: (t: Turno) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<Turno[]>([])
+  const [loading, setLoading] = useState(false)
+
+  async function buscar(q: string) {
+    setLoading(true)
+    let req = supabase
+      .from('turnos')
+      .select('id, numero, tipo, descripcion, hora_inicio, hora_fin, duracion_minutos, color_hex, text_color_hex')
+      .eq('activo', true)
+      .order('numero')
+      .limit(60)
+
+    if (q.trim()) {
+      req = req.or(`numero.ilike.%${q}%,descripcion.ilike.%${q}%`)
+    }
+
+    const { data } = await req
+    setResults((data ?? []) as Turno[])
+    setLoading(false)
+  }
+
+  // Carga inicial al abrir
+  useEffect(() => {
+    if (open) buscar('')
+  }, [open])
+
+  // Búsqueda con debounce
+  useEffect(() => {
+    if (!open) return
+    const t = setTimeout(() => buscar(query), 280)
+    return () => clearTimeout(t)
+  }, [query, open])
+
+  function handleSelect(t: Turno) {
+    onChange(t)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const inputCls = `flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400`
+
+  return (
+    <div>
+      {/* Botón / turno seleccionado */}
+      {!open && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left
+            transition-colors
+            ${value
+              ? 'bg-white border-gray-200 hover:bg-gray-50'
+              : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+        >
+          {value ? (
+            <>
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+                style={{ backgroundColor: value.color_hex, color: value.text_color_hex }}
+              >
+                {value.numero.slice(0, 3)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800 truncate">{value.numero}</p>
+                {value.descripcion && (
+                  <p className="text-xs text-gray-500 truncate">{value.descripcion}</p>
+                )}
+              </div>
+              {value.hora_inicio && value.hora_fin && (
+                <span className="text-xs text-gray-400 shrink-0 font-mono">
+                  {value.hora_inicio.slice(0, 5)}–{value.hora_fin.slice(0, 5)}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <Search className="w-4 h-4 text-gray-400 shrink-0" />
+              <span className="text-sm">Buscar turno por número o descripción…</span>
+            </>
+          )}
+        </button>
+      )}
+
+      {/* Panel de búsqueda */}
+      {open && (
+        <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+          {/* Barra de búsqueda */}
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+            <Search className="w-4 h-4 text-gray-400 shrink-0" />
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Número o descripción…"
+              className={inputCls}
+            />
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setQuery('') }}
+              className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <X className="w-3.5 h-3.5 text-gray-400" />
+            </button>
+          </div>
+
+          {/* Resultados */}
+          <div className="max-h-52 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+              </div>
+            ) : results.length === 0 ? (
+              <p className="text-xs text-gray-400 text-center py-8">Sin resultados</p>
+            ) : (
+              results.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleSelect(t)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 text-left
+                    hover:bg-gray-50 active:bg-gray-100 transition-colors
+                    border-b border-gray-50 last:border-0"
+                >
+                  {/* Chip con color */}
+                  <div
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
+                    style={{ backgroundColor: t.color_hex, color: t.text_color_hex }}
+                  >
+                    {t.numero.slice(0, 3)}
+                  </div>
+
+                  {/* Datos principales */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 leading-tight">{t.numero}</p>
+                    {t.descripcion && (
+                      <p className="text-xs text-gray-500 truncate mt-0.5">{t.descripcion}</p>
+                    )}
+                  </div>
+
+                  {/* Horario y tipo */}
+                  <div className="text-right shrink-0">
+                    {t.hora_inicio && t.hora_fin && (
+                      <p className="text-xs font-mono text-gray-600">
+                        {t.hora_inicio.slice(0, 5)}–{t.hora_fin.slice(0, 5)}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-gray-400 capitalize mt-0.5">{t.tipo}</p>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
