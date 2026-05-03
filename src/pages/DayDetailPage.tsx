@@ -352,18 +352,6 @@ export default function DayDetailPage() {
                 />
               )}
 
-              {/* ── Progreso del turno (solo hoy, solo servicio con horario) ── */}
-              {isToday && !isRest && !isEspecial && !isGuardia && !guardiaVirtual
-                && turno?.hora_inicio && turno?.hora_fin && data.servicios.length > 0 && (
-                <ShiftProgress
-                  horaInicio={turno.hora_inicio}
-                  horaFin={turno.hora_fin}
-                  servicios={data.servicios}
-                  accentColor={bg}
-                  nombreEstacion={nombreEstacion}
-                />
-              )}
-
               {!isGuardia && data.servicios.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
@@ -404,6 +392,18 @@ export default function DayDetailPage() {
                     )}
                   </div>
                 </div>
+              )}
+
+              {/* ── Progreso del turno (solo hoy, tras los servicios) ── */}
+              {isToday && !isRest && !isEspecial && !isGuardia && !guardiaVirtual
+                && turno?.hora_inicio && turno?.hora_fin && data.servicios.length > 0 && (
+                <ShiftProgress
+                  horaInicio={turno.hora_inicio}
+                  horaFin={turno.hora_fin}
+                  servicios={data.servicios}
+                  accentColor={bg}
+                  nombreEstacion={nombreEstacion}
+                />
               )}
 
               {turno && !isRest && !isEspecial && !guardiaVirtual && data.servicios.length === 0 && (
@@ -592,15 +592,15 @@ function ServiceRow({ service, isLast, nombreEstacion }: {
             )}
 
             <div className="flex items-center gap-2">
-              <div>
-                <p className="font-bold text-gray-900 text-sm leading-none">{nombreEstacion(service.origen)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-gray-900 text-sm leading-none truncate">{nombreEstacion(service.origen)}</p>
                 <p className="text-xs text-green-600 font-semibold mt-0.5">{formatTime(service.hora_salida)}</p>
               </div>
 
               <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" />
 
-              <div>
-                <p className="font-bold text-gray-900 text-sm leading-none">{nombreEstacion(service.destino)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-gray-900 text-sm leading-none truncate">{nombreEstacion(service.destino)}</p>
                 <p className={cn(
                   'text-xs font-semibold mt-0.5',
                   service.dia_siguiente ? 'text-orange-500' : 'text-red-500',
