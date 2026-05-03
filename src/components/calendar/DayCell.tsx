@@ -91,12 +91,13 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
   const isVacaciones = turno.tipo === 'vacaciones'
   const isCambio     = !!day.asignacion?.cambio_id
 
-  // Días cambiados usan el color del slot 'cambio' del perfil
+  // Días cambiados: color fijo del slot 'cambio', o heredar el color del nuevo turno
   const baseColors   = computeTurnoColors(turno, prefs)
   const cambioColors = prefs.cambio
-  const bg     = isCambio ? cambioColors.bg     : baseColors.bg
-  const border = isCambio ? cambioColors.border : baseColors.border
-  const turnoText = isCambio ? cambioColors.text : baseColors.turnoText
+  const heredar      = isCambio && prefs.cambio_heredar_color
+  const bg       = (isCambio && !heredar) ? cambioColors.bg     : baseColors.bg
+  const border   = (isCambio && !heredar) ? cambioColors.border : baseColors.border
+  const turnoText = (isCambio && !heredar) ? cambioColors.text : baseColors.turnoText
 
   // Horas formateadas (HH:MM)
   // Para guardias virtuales 7xxx/8xxx: decodificar del código si no están en BD
@@ -144,7 +145,11 @@ export default function DayCell({ day, showTimes = true, onClick }: DayCellProps
       {/* Badge de cambio de turno (esquina superior derecha) */}
       {isCambio && (
         <div
-          style={{ fontSize: dayNumFontSize(), backgroundColor: cambioColors.text, color: cambioColors.bg }}
+          style={{
+            fontSize: dayNumFontSize(),
+            backgroundColor: heredar ? turnoText : cambioColors.text,
+            color:           heredar ? bg         : cambioColors.bg,
+          }}
           className="absolute top-0 right-0 w-[1.7em] h-[1.7em] rounded-tr-xl rounded-bl-xl
             flex items-center justify-center"
           aria-label="Turno cambiado"

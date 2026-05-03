@@ -570,6 +570,14 @@ function ColorEditor() {
     setTimeout(() => setSaved(false), 1500)
   }
 
+  async function handleToggleHeredarColor() {
+    const next: ColorPrefs = { ...prefs, cambio_heredar_color: !prefs.cambio_heredar_color }
+    setSaving(true); setSaved(false)
+    await savePrefs(next)
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
+  }
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-3">
       {/* Cabecera */}
@@ -594,12 +602,30 @@ function ColorEditor() {
           <span className="text-sm font-medium text-gray-800">Mostrar horas en el calendario</span>
           <span className="text-xs text-gray-400">Hora de inicio y fin en cada celda del día</span>
         </div>
-        {/* Switch visual */}
         <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3
           ${prefs.mostrar_horas ? 'bg-red-500' : 'bg-gray-300'}`}
         >
           <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform
             ${prefs.mostrar_horas ? 'translate-x-5' : 'translate-x-0.5'}`}
+          />
+        </div>
+      </button>
+
+      {/* Toggle: días cambiados heredan color del nuevo turno */}
+      <button
+        onClick={handleToggleHeredarColor}
+        className="flex items-center justify-between w-full px-3 py-2.5
+          bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100 transition-colors"
+      >
+        <div className="flex flex-col items-start gap-0.5">
+          <span className="text-sm font-medium text-gray-800">Color heredado en días cambiados</span>
+          <span className="text-xs text-gray-400">Usa el color del nuevo turno en lugar del color fijo</span>
+        </div>
+        <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3
+          ${prefs.cambio_heredar_color ? 'bg-red-500' : 'bg-gray-300'}`}
+        >
+          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform
+            ${prefs.cambio_heredar_color ? 'translate-x-5' : 'translate-x-0.5'}`}
           />
         </div>
       </button>

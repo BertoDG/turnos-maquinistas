@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types'
@@ -23,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const initializedRef = useRef(false)
 
   async function loadProfile(userId: string) {
     try {
@@ -46,19 +47,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const safetyTimeout = setTimeout(() => {
-      console.warn('[Auth] Timeout de seguridad activado')
-      setLoading(false)
-    }, 6000)
+    let cancelled = false
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      clearTimeout(safetyTimeout)
+    // ── Inicialización: getSession() maneja el refresh del token antes de resolver ──
+    // Esto evita el flash de la pantalla de login cuando el token está caducado
+    // pero es renovable (Supabase lo renueva internamente en getSession).
+    async function init() {
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession()
+        if (cancelled) return
+
+        setSession(initialSession)
+        setUser(initialSession?.user ?? null)
+
+        if (initialSession?.user) {
+          await loadProfile(initialSession.user.id)
+        }
+      } catch (err) {
+        console.warn('[Auth] init falló:', err)
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          initializedRef.current = true
+        }
+      }
+    }
+
+    init()
+
+    // ── Cambios posteriores (sign in, sign out, token refresh…) ──
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      // Ignorar el INITIAL_SESSION: ya lo gestionamos con getSession() arriba
+      if (event === 'INITIAL_SESSION') return
+      if (cancelled) return
 
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         setSession(null); setUser(null); setProfile(null)
-        setLoading(false)
         return
       }
 
@@ -66,29 +90,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[Auth] Token refresh fallido, cerrando sesión')
         await supabase.auth.signOut()
         setSession(null); setUser(null); setProfile(null)
-        setLoading(false)
         return
       }
 
-      setSession(session)
-      setUser(session?.user ?? null)
+      // SIGNED_IN, TOKEN_REFRESHED, USER_UPDATED…
+      setSession(newSession)
+      setUser(newSession?.user ?? null)
 
-      if (session?.user) {
-        await loadProfile(session.user.id)
+      if (newSession?.user) {
+        await loadProfile(newSession.user.id)
       } else {
         setProfile(null)
       }
-
-      setLoading(false)
     })
 
-    return () => { clearTimeout(safetyTimeout); subscription.unsubscribe() }
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
 
   /**
    * Inicia sesión con email real o con número de matrícula.
-   * Si el valor contiene '@' se usa como email; si no, se construye
-   * el email interno: matricula@turnosmaq.internal
    */
   async function signIn(emailOrMatricula: string, password: string): Promise<{ error: string | null }> {
     try {
@@ -115,8 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   /**
-   * Registra un nuevo usuario con email y contraseña.
-   * El perfil se crea con activo=false hasta que el admin lo active.
+   * Registra un nuevo usuario. El perfil se crea con activo=false hasta que el admin lo active.
    */
   async function signUp(email: string, password: string): Promise<{ error: string | null }> {
     try {
@@ -132,9 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: error.message }
       }
 
-      // Cerramos la sesión que Supabase crea automáticamente al registrarse
-      // (cuando "Confirm email" está deshabilitado en Supabase).
-      // El usuario debe esperar la activación del admin antes de acceder.
+      // Cerrar la sesión automática que crea Supabase al registrarse.
       await supabase.auth.signOut()
 
       return { error: null }

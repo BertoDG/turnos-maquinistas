@@ -22,10 +22,11 @@ export interface ColorPrefs {
   libre:                SlotColors
   cambio:               SlotColors   // días con turno cambiado
   // Preferencias de visualización
-  mostrar_horas:        boolean
+  mostrar_horas:         boolean
+  cambio_heredar_color:  boolean     // si true, el día cambiado hereda el color del nuevo turno
 }
 
-export type ColorPrefKey = keyof Omit<ColorPrefs, 'mostrar_horas'>
+export type ColorPrefKey = keyof Omit<ColorPrefs, 'mostrar_horas' | 'cambio_heredar_color'>
 export type SlotColorProp = keyof SlotColors
 
 // ── Helpers de color ──────────────────────────────────────────────────────────
@@ -70,6 +71,7 @@ export const DEFAULT_COLOR_PREFS: ColorPrefs = {
   libre:                slot('#E8E6DF', '#888780'),
   cambio:               slot('#EDE9FE', '#5B21B6'),  // violeta — días cambiados
   mostrar_horas:        true,
+  cambio_heredar_color: false,
 }
 
 // ── Merge con defaults ────────────────────────────────────────────────────────
@@ -102,6 +104,9 @@ export function mergePrefs(stored: unknown): ColorPrefs {
   // Preferencias de visualización
   if (typeof s.mostrar_horas === 'boolean') {
     result.mostrar_horas = s.mostrar_horas
+  }
+  if (typeof s.cambio_heredar_color === 'boolean') {
+    result.cambio_heredar_color = s.cambio_heredar_color
   }
 
   return result
