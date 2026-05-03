@@ -634,7 +634,7 @@ function BookendRow({ tipo, hora, estacion }: {
   return (
     <div className="flex gap-3 px-4 py-3">
       {/* Columna izquierda: punto + línea (igual que ServiceRow) */}
-      <div className="flex flex-col items-center shrink-0" style={{ width: 24 }}>
+      <div className="flex flex-col items-center">
         <div className="w-3 h-3 rounded-full border-2 border-gray-300 bg-white shrink-0 mt-[3px]" />
         {isInicio && <div className="flex-1 w-0.5 bg-gray-200 my-1 min-h-[24px]" />}
       </div>
