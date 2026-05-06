@@ -51,6 +51,12 @@ $$;
 
 -- ── 3. Actualizar admin_actualizar_perfil con observaciones ───
 
+-- Eliminar la firma anterior (8 parámetros, sin p_observaciones) para evitar
+-- ambigüedad de overload al crear la nueva versión con 9 parámetros.
+DROP FUNCTION IF EXISTS public.admin_actualizar_perfil(
+  UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BOOLEAN
+);
+
 CREATE OR REPLACE FUNCTION public.admin_actualizar_perfil(
   p_user_id      UUID,
   p_matricula    TEXT,

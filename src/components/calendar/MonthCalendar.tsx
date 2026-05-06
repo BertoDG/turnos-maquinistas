@@ -53,7 +53,7 @@ export default function MonthCalendar({ month, maquinistaId }: MonthCalendarProp
     <section className="mb-6">
       {/* Cabecera del mes */}
       <div className="px-4 py-3">
-        <h2 className="text-base font-bold text-gray-900 capitalize">
+        <h2 className="text-base font-bold text-gray-900 dark:text-white capitalize">
           {month.label}
         </h2>
       </div>
@@ -66,10 +66,14 @@ export default function MonthCalendar({ month, maquinistaId }: MonthCalendarProp
             <div
               key={d.largo}
               className={`flex items-center justify-center rounded-lg py-1
-                ${isWeekend ? 'bg-red-50' : 'bg-gray-100'}`}
+                ${isWeekend
+                  ? 'bg-red-50 dark:bg-red-900/30'
+                  : 'bg-gray-100 dark:bg-gray-800'}`}
             >
               <span className={`text-[11px] font-bold tracking-wide leading-none
-                ${isWeekend ? 'text-red-400' : 'text-gray-400'}`}>
+                ${isWeekend
+                  ? 'text-red-400 dark:text-red-400'
+                  : 'text-gray-400 dark:text-gray-500'}`}>
                 {d.medio}
               </span>
             </div>

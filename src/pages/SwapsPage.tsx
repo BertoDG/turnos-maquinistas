@@ -118,18 +118,18 @@ export default function SwapsPage() {
   return (
     <div className="flex flex-col min-h-full">
       {/* Tabs */}
-      <div className="bg-white border-b border-gray-100 px-4 pt-3 pb-0 flex gap-0">
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 px-4 pt-3 pb-0 flex gap-0">
         {TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`flex-1 py-2.5 text-sm font-semibold capitalize relative flex items-center justify-center gap-1.5
-              ${tab === t.key ? 'text-red-600' : 'text-gray-500'}`}
+              ${tab === t.key ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'}`}
           >
             {t.label}
             {t.badge !== undefined && (
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none
-                ${tab === t.key ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
+                ${tab === t.key ? 'bg-red-100 text-red-600' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'}`}>
                 {t.badge}
               </span>
             )}
@@ -286,20 +286,20 @@ function DeudaTab({
             return (
               <div
                 key={bal.companeroId}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden"
               >
                 {/* Cabecera del compañero */}
                 <button
                   onClick={() => setExpanded(isOpen ? null : bal.companeroId)}
                   className="w-full flex items-center gap-3 px-4 py-3.5
-                    hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                    hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors"
                 >
-                  <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center
-                    text-gray-600 font-bold text-xs shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center
+                    text-gray-600 dark:text-gray-300 font-bold text-xs shrink-0">
                     {comp ? getInitials(comp.nombre, comp.apellidos) : '??'}
                   </div>
                   <div className="flex-1 min-w-0 text-left">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
                       {comp ? `${comp.apellidos}, ${comp.nombre}` : bal.companeroId}
                     </p>
                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -325,7 +325,7 @@ function DeudaTab({
 
                 {/* Detalle de deudas expandido */}
                 {isOpen && (
-                  <div className="border-t border-gray-50 divide-y divide-gray-50">
+                  <div className="border-t border-gray-50 dark:border-gray-700 divide-y divide-gray-50 dark:divide-gray-700">
                     {[
                       ...bal.meDebeItems.map((d) => ({ d, tipo: 'me_debe' as const })),
                       ...bal.leDeboItems.map((d) => ({ d, tipo: 'le_debo' as const })),
@@ -338,10 +338,10 @@ function DeudaTab({
                           ${tipo === 'me_debe' ? 'bg-green-500' : 'bg-amber-500'}`}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-gray-700">
+                          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                             {tipo === 'me_debe' ? 'Día que te debe' : 'Día que debes'}
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                             Originado el {formatDate(d.fecha_origen, 'dd/MM/yyyy')}
                           </p>
                         </div>
@@ -349,8 +349,8 @@ function DeudaTab({
                           onClick={() => handleSaldar(d.id)}
                           disabled={saldando === d.id}
                           className="text-xs font-semibold px-3 py-1.5 rounded-lg
-                            border border-gray-200 text-gray-600
-                            hover:bg-gray-50 active:bg-gray-100 transition-colors
+                            border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300
+                            hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors
                             disabled:opacity-40 flex items-center gap-1"
                         >
                           {saldando === d.id
@@ -398,22 +398,22 @@ function SolicitudCard({
       : 'Compañero'
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-50">
+      <div className="px-4 py-3 flex items-center gap-3 border-b border-gray-50 dark:border-gray-700">
         {isExterno ? (
-          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
             <UserX className="w-4 h-4 text-amber-600" />
           </div>
         ) : (
-          <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center
-            text-gray-600 font-bold text-xs shrink-0">
+          <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center
+            text-gray-600 dark:text-gray-300 font-bold text-xs shrink-0">
             {otherProfile ? getInitials(otherProfile.nombre, otherProfile.apellidos) : '??'}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{otherName}</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{otherName}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             {isExterno
               ? 'Maquinista externo · sin app'
               : formatDate(solicitud.created_at, "dd/MM/yyyy 'a las' HH:mm")}
@@ -428,18 +428,18 @@ function SolicitudCard({
       {/* Fechas */}
       <div className="px-4 py-3 flex items-center gap-3">
         <div className="flex-1 text-center">
-          <p className="text-[10px] text-gray-400 font-medium mb-1">
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium mb-1">
             {isReceived ? 'Su turno' : 'Tu turno'}
           </p>
-          <p className="text-sm font-bold text-gray-900">
+          <p className="text-sm font-bold text-gray-900 dark:text-white">
             {formatDate(solicitud.fecha_solicitante, 'dd MMM')}
           </p>
         </div>
 
-        <ArrowLeftRight className="w-4 h-4 text-gray-400 shrink-0" />
+        <ArrowLeftRight className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" />
 
         <div className="flex-1 text-center">
-          <p className="text-[10px] text-gray-400 font-medium mb-1">
+          <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium mb-1">
             {isExterno ? 'Turno que asumo' : isReceived ? 'Tu turno' : 'Su turno'}
           </p>
           {isExterno && turnoReceptor ? (
@@ -453,7 +453,7 @@ function SolicitudCard({
               <p className="text-xs text-gray-500">{formatDate(solicitud.fecha_receptor, 'dd MMM')}</p>
             </div>
           ) : (
-            <p className="text-sm font-bold text-gray-900">
+            <p className="text-sm font-bold text-gray-900 dark:text-white">
               {formatDate(solicitud.fecha_receptor, 'dd MMM')}
             </p>
           )}
@@ -463,7 +463,7 @@ function SolicitudCard({
       {/* Mensaje */}
       {solicitud.mensaje && (
         <div className="px-4 pb-3">
-          <p className="text-xs text-gray-500 italic bg-gray-50 rounded-xl px-3 py-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-700 rounded-xl px-3 py-2">
             "{solicitud.mensaje}"
           </p>
         </div>
@@ -557,8 +557,8 @@ function NewSwapForm({
     setDeudaInfo(bal ? { meDebeCount: bal.meDebeCount, leDeboCount: bal.leDeboCount } : null)
   }, [companeroId, byCompanero])
 
-  const inputCls = `w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-    focus:outline-none focus:ring-2 focus:ring-red-400`
+  const inputCls = `w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
+    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500`
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -634,9 +634,9 @@ function NewSwapForm({
     : !!(companeroDate && selectedTurno)
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <form onSubmit={handleSubmit} className="mt-3 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
       {/* Toggle modo */}
-      <div className="flex border-b border-gray-100">
+      <div className="flex border-b border-gray-100 dark:border-gray-700">
         {([
           { key: 'registrado' as SwapModo, label: 'Con compañero', Icon: Users },
           { key: 'externo'    as SwapModo, label: 'Externo / sin app', Icon: UserX },
@@ -648,8 +648,8 @@ function NewSwapForm({
             className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold
               transition-colors
               ${modo === key
-                ? 'bg-red-50 text-red-600 border-b-2 border-red-500'
-                : 'text-gray-500 hover:bg-gray-50'}`}
+                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-b-2 border-red-500'
+                : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
           >
             <Icon className="w-3.5 h-3.5" />
             {label}
@@ -663,7 +663,7 @@ function NewSwapForm({
           <>
             {/* Mi fecha */}
             <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
                 Mi fecha <span className="text-gray-400">(turno que ofrezco)</span>
               </label>
               <input type="date" value={myDate} onChange={e => setMyDate(e.target.value)}
@@ -672,7 +672,7 @@ function NewSwapForm({
 
             {/* Selector compañero */}
             <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Compañero</label>
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">Compañero</label>
               <select value={companeroId} onChange={e => setCompaneroId(e.target.value)}
                 className={inputCls} required>
                 <option value="">Selecciona compañero...</option>
@@ -700,7 +700,7 @@ function NewSwapForm({
 
             {/* Fecha compañero */}
             <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
                 Fecha del compañero <span className="text-gray-400">(turno que quiero)</span>
               </label>
               <input type="date" value={companeroDate} onChange={e => setCompaneroDate(e.target.value)}
@@ -711,7 +711,7 @@ function NewSwapForm({
           <>
             {/* Fecha del cambio */}
             <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
                 Fecha del cambio
               </label>
               <input type="date" value={companeroDate} onChange={e => setCompaneroDate(e.target.value)}
@@ -720,7 +720,7 @@ function NewSwapForm({
 
             {/* Turno que se hace ese día */}
             <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
                 Turno que haré ese día
               </label>
               <TurnoPicker value={selectedTurno} onChange={setSelectedTurno} />
@@ -728,7 +728,7 @@ function NewSwapForm({
 
             {/* Nombre / matrícula del maquinista externo */}
             <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">
                 Maquinista externo <span className="text-gray-400">(opcional)</span>
               </label>
               <input
@@ -829,8 +829,8 @@ function TurnoPicker({ value, onChange }: {
           className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left
             transition-colors
             ${value
-              ? 'bg-white border-gray-200 hover:bg-gray-50'
-              : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+              ? 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+              : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-600'}`}
         >
           {value ? (
             <>
@@ -841,7 +841,7 @@ function TurnoPicker({ value, onChange }: {
                 {value.numero.slice(0, 3)}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{value.numero}</p>
+                <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 truncate">{value.numero}</p>
                 {value.descripcion && (
                   <p className="text-xs text-gray-500 truncate">{value.descripcion}</p>
                 )}
@@ -863,21 +863,21 @@ function TurnoPicker({ value, onChange }: {
 
       {/* Panel de búsqueda */}
       {open && (
-        <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+        <div className="border border-gray-200 dark:border-gray-600 rounded-xl overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
           {/* Barra de búsqueda */}
-          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100 dark:border-gray-700">
             <Search className="w-4 h-4 text-gray-400 shrink-0" />
             <input
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Número o descripción…"
-              className={inputCls}
+              className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-white"
             />
             <button
               type="button"
               onClick={() => { setOpen(false); setQuery('') }}
-              className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+              className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
               <X className="w-3.5 h-3.5 text-gray-400" />
             </button>
@@ -890,7 +890,7 @@ function TurnoPicker({ value, onChange }: {
                 <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
               </div>
             ) : results.length === 0 ? (
-              <p className="text-xs text-gray-400 text-center py-8">Sin resultados</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 text-center py-8">Sin resultados</p>
             ) : (
               results.map(t => (
                 <button
@@ -898,8 +898,8 @@ function TurnoPicker({ value, onChange }: {
                   type="button"
                   onClick={() => handleSelect(t)}
                   className="w-full flex items-center gap-3 px-3 py-2.5 text-left
-                    hover:bg-gray-50 active:bg-gray-100 transition-colors
-                    border-b border-gray-50 last:border-0"
+                    hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors
+                    border-b border-gray-50 dark:border-gray-700 last:border-0"
                 >
                   {/* Chip con color */}
                   <div
@@ -911,20 +911,20 @@ function TurnoPicker({ value, onChange }: {
 
                   {/* Datos principales */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800 leading-tight">{t.numero}</p>
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-100 leading-tight">{t.numero}</p>
                     {t.descripcion && (
-                      <p className="text-xs text-gray-500 truncate mt-0.5">{t.descripcion}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">{t.descripcion}</p>
                     )}
                   </div>
 
                   {/* Horario y tipo */}
                   <div className="text-right shrink-0">
                     {t.hora_inicio && t.hora_fin && (
-                      <p className="text-xs font-mono text-gray-600">
+                      <p className="text-xs font-mono text-gray-600 dark:text-gray-300">
                         {t.hora_inicio.slice(0, 5)}–{t.hora_fin.slice(0, 5)}
                       </p>
                     )}
-                    <p className="text-[10px] text-gray-400 capitalize mt-0.5">{t.tipo}</p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500 capitalize mt-0.5">{t.tipo}</p>
                   </div>
                 </button>
               ))

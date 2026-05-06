@@ -286,7 +286,7 @@ export default function ProfilePage() {
     <div className="flex flex-col gap-4 px-4 pt-4 pb-8">
 
       {/* Avatar y nombre */}
-      <div className="bg-white rounded-2xl p-6 flex flex-col items-center shadow-sm border border-gray-100">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 flex flex-col items-center shadow-sm border border-gray-100 dark:border-gray-700">
         {/* Input oculto para seleccionar foto */}
         <input
           ref={avatarInputRef}
@@ -342,10 +342,10 @@ export default function ProfilePage() {
           </button>
         )}
 
-        <h2 className="text-lg font-bold text-gray-900 text-center">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-white text-center">
           {profile.nombre} {profile.apellidos}
         </h2>
-        <p className="text-gray-500 text-sm mt-0.5">Matrícula: {profile.matricula}</p>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mt-0.5">Matrícula: {profile.matricula}</p>
         {isAdmin && (
           <span className="mt-2 bg-red-100 text-red-700 text-xs font-semibold px-3 py-1 rounded-full flex items-center gap-1">
             <Shield className="w-3 h-3" />
@@ -355,14 +355,14 @@ export default function ProfilePage() {
       </div>
 
       {/* Datos personales */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         {/* Cabecera con botón editar */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Mis datos</p>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 dark:border-gray-700">
+          <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Mis datos</p>
           <button
             onClick={editingProfile ? () => setEditingProfile(false) : openEdit}
             className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors
-              ${editingProfile ? 'bg-gray-100 text-gray-500' : 'bg-red-50 text-red-600 hover:bg-red-100'}`}
+              ${editingProfile ? 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400' : 'bg-red-50 dark:bg-red-900/30 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/50'}`}
           >
             {editingProfile
               ? <><X className="w-3 h-3" />Cancelar</>
@@ -386,8 +386,8 @@ export default function ProfilePage() {
                 <input
                   value={editForm.nombre}
                   onChange={e => setEditForm(f => ({ ...f, nombre: e.target.value }))}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
+                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                   placeholder="Ej: Carlos"
                 />
               </div>
@@ -396,8 +396,8 @@ export default function ProfilePage() {
                 <input
                   value={editForm.apellidos}
                   onChange={e => setEditForm(f => ({ ...f, apellidos: e.target.value }))}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
+                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                   placeholder="Ej: García"
                 />
               </div>
@@ -408,8 +408,8 @@ export default function ProfilePage() {
                 <input
                   value={editForm.matricula}
                   onChange={e => setEditForm(f => ({ ...f, matricula: e.target.value }))}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
+                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                   placeholder="Ej: 87654"
                 />
               </div>
@@ -418,8 +418,8 @@ export default function ProfilePage() {
                 <input
                   value={editForm.depot}
                   onChange={e => setEditForm(f => ({ ...f, depot: e.target.value }))}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400"
+                  className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
+                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
                   placeholder="Ej: GIJON"
                 />
               </div>
@@ -451,7 +451,7 @@ export default function ProfilePage() {
           </div>
         ) : (
           /* Vista de datos */
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-50 dark:divide-gray-700">
             <InfoRow icon={User}  label="Nombre"    value={`${profile.nombre} ${profile.apellidos}`} />
             <InfoRow icon={Train} label="Matrícula" value={profile.matricula} />
             <InfoRow icon={Train} label="Depósito"  value={profile.depot ?? 'No asignado'} />
@@ -468,10 +468,10 @@ export default function ProfilePage() {
       </div>
 
       {/* ── Subir PDF de turnos ─────────────────────────────── */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-3">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex flex-col gap-3">
         <div>
-          <h3 className="text-sm font-bold text-gray-800">Mis turnos</h3>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">Mis turnos</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             Sube el PDF "Desarrollo Anual" que te ha enviado RENFE para importar todos tus turnos.
           </p>
         </div>
@@ -485,28 +485,28 @@ export default function ProfilePage() {
             onClick={() => fileInputRef.current?.click()}
             className={`flex items-center justify-center gap-3 px-4 py-5 rounded-xl border-2 border-dashed
               cursor-pointer transition-all
-              ${isDragging ? 'border-red-400 bg-red-50' : 'border-gray-200 hover:border-red-300 hover:bg-red-50'}`}
+              ${isDragging ? 'border-red-400 bg-red-50 dark:bg-red-900/20' : 'border-gray-200 dark:border-gray-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
           >
             <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFileChange} className="hidden" />
             <Upload className="w-5 h-5 text-gray-400 shrink-0" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Seleccionar PDF de turnos</p>
-              <p className="text-xs text-gray-400">Arrastra aquí o pulsa para buscar</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Seleccionar PDF de turnos</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Arrastra aquí o pulsa para buscar</p>
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-3 px-3 py-3 bg-red-50 rounded-xl">
+          <div className="flex items-center gap-3 px-3 py-3 bg-red-50 dark:bg-red-900/20 rounded-xl">
             <FileText className="w-5 h-5 text-red-600 shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
-              <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{file.name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
             </div>
             {!isLoading && (
               <button
                 onClick={() => { setFile(null); setUploadState({ status: 'idle', message: '' }) }}
-                className="p-1.5 rounded-lg bg-white hover:bg-gray-100 transition-colors shrink-0"
+                className="p-1.5 rounded-lg bg-white dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shrink-0"
               >
-                <X className="w-3.5 h-3.5 text-gray-500" />
+                <X className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
               </button>
             )}
           </div>
@@ -556,8 +556,8 @@ export default function ProfilePage() {
       {/* Cerrar sesión */}
       <button
         onClick={signOut}
-        className="w-full flex items-center justify-between px-4 py-4 bg-white rounded-2xl
-          border border-gray-100 shadow-sm text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-4 bg-white dark:bg-gray-800 rounded-2xl
+          border border-gray-100 dark:border-gray-700 shadow-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 active:bg-red-100 transition-colors"
       >
         <div className="flex items-center gap-3">
           <LogOut className="w-5 h-5" />
@@ -567,47 +567,47 @@ export default function ProfilePage() {
       </button>
 
       {/* Zona de peligro: eliminar cuenta */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-50">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Zona de peligro</p>
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-50 dark:border-gray-700">
+          <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">Zona de peligro</p>
         </div>
         <button
           onClick={() => { setShowDeleteConfirm(true); setDeleteError(null) }}
           className="w-full flex items-center justify-between px-4 py-4
-            text-gray-500 hover:bg-red-50 hover:text-red-600 active:bg-red-100 transition-colors"
+            text-gray-500 dark:text-gray-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-600 active:bg-red-100 transition-colors"
         >
           <div className="flex items-center gap-3">
             <Trash2 className="w-5 h-5" />
             <div className="text-left">
               <span className="font-medium text-sm block">Eliminar mi cuenta</span>
-              <span className="text-xs text-gray-400">Borra todos tus datos permanentemente</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">Borra todos tus datos permanentemente</span>
             </div>
           </div>
-          <ChevronRight className="w-4 h-4 text-gray-300" />
+          <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600" />
         </button>
       </div>
 
-      <p className="text-center text-xs text-gray-400 mt-2">TurnosMaq v0.1 · Uso interno RENFE</p>
+      <p className="text-center text-xs text-gray-400 dark:text-gray-600 mt-2">TurnosMaq v0.1 · Uso interno RENFE</p>
 
       {/* Modal confirmación borrar cuenta */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
-            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+            <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-6 h-6 text-red-600" />
             </div>
-            <h3 className="text-base font-bold text-gray-900 text-center mb-1">
+            <h3 className="text-base font-bold text-gray-900 dark:text-white text-center mb-1">
               Eliminar mi cuenta
             </h3>
-            <p className="text-sm text-gray-500 text-center mb-1">
-              Se eliminarán <span className="font-semibold text-gray-800">todos tus datos</span>: turnos, cambios y deudas.
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-1">
+              Se eliminarán <span className="font-semibold text-gray-800 dark:text-gray-200">todos tus datos</span>: turnos, cambios y deudas.
             </p>
-            <p className="text-xs text-gray-400 text-center mb-5">
+            <p className="text-xs text-gray-400 dark:text-gray-500 text-center mb-5">
               Esta acción no se puede deshacer.
             </p>
 
             {deleteError && (
-              <div className="flex items-start gap-2 bg-red-50 text-red-700 text-xs rounded-xl px-3 py-2 mb-4">
+              <div className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs rounded-xl px-3 py-2 mb-4">
                 <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                 {deleteError}
               </div>
@@ -617,8 +617,8 @@ export default function ProfilePage() {
               <button
                 onClick={() => setShowDeleteConfirm(false)}
                 disabled={deletingAccount}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium
-                  text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-medium
+                  text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
               >
                 Cancelar
               </button>
@@ -882,12 +882,12 @@ function InfoRow({ icon: Icon, label, value }: {
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3.5">
-      <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-        <Icon className="w-4 h-4 text-gray-500" />
+      <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
       </div>
       <div>
-        <p className="text-xs text-gray-400">{label}</p>
-        <p className="text-sm font-medium text-gray-900">{value}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{label}</p>
+        <p className="text-sm font-medium text-gray-900 dark:text-white">{value}</p>
       </div>
     </div>
   )

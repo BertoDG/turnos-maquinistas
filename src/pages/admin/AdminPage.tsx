@@ -108,7 +108,7 @@ export default function AdminPage() {
       </div>
 
       {/* Acciones rápidas */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden divide-y divide-gray-50 dark:divide-gray-700">
         <ActionRow
           icon={Upload}
           label="Subir PDF de turnos"
@@ -138,7 +138,7 @@ export default function AdminPage() {
       {/* Historial de imports */}
       <div>
         <div className="flex items-center justify-between mb-2 px-1">
-          <h3 className="text-sm font-bold text-gray-700">Historial de importaciones</h3>
+          <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">Historial de importaciones</h3>
           <button
             onClick={() => navigate('/admin/subir')}
             className="text-xs text-red-600 font-semibold flex items-center gap-1 hover:text-red-700"
@@ -152,12 +152,12 @@ export default function AdminPage() {
             <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
           </div>
         ) : uploads.length === 0 ? (
-          <div className="bg-white rounded-2xl p-6 text-center border border-gray-100">
-            <FileText className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">No hay PDFs importados todavía</p>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 text-center border border-gray-100 dark:border-gray-700">
+            <FileText className="w-8 h-8 text-gray-300 dark:text-gray-600 mx-auto mb-2" />
+            <p className="text-sm text-gray-500 dark:text-gray-400">No hay PDFs importados todavía</p>
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-700">
             {uploads.map((upload) => {
               const conf = ESTADO_CONFIG[upload.estado]
               const Icon = conf.icon
@@ -167,14 +167,14 @@ export default function AdminPage() {
                     <Icon className={`w-4 h-4 ${conf.color} ${upload.estado === 'procesando' ? 'animate-spin' : ''}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{upload.filename}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{upload.filename}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
                       {upload.tipo === 'catalogo_turnos' ? 'Catálogo de turnos' : 'Asignación maquinista'}
                       {upload.periodo_mes && upload.periodo_anio && (
                         <> · {upload.periodo_mes}/{upload.periodo_anio}</>
                       )}
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
                       {formatDate(upload.created_at, "dd/MM/yyyy HH:mm")}
                       {upload.registros_creados > 0 && ` · ${upload.registros_creados} registros`}
                     </p>
@@ -196,13 +196,13 @@ function StatCard({ label, value, icon: Icon, color }: {
   label: string; value: number; icon: React.ElementType; color: string
 }) {
   return (
-    <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex items-center gap-3">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-3">
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${color}`}>
         <Icon className="w-5 h-5" />
       </div>
       <div>
-        <p className="text-xl font-bold text-gray-900">{value}</p>
-        <p className="text-xs text-gray-500 leading-tight">{label}</p>
+        <p className="text-xl font-bold text-gray-900 dark:text-white">{value}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">{label}</p>
       </div>
     </div>
   )
@@ -215,15 +215,15 @@ function ActionRow({ icon: Icon, label, description, onClick, accent, badge }: {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-100 transition-colors text-left"
+      className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors text-left"
     >
       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0
-        ${accent ? 'bg-red-600' : 'bg-gray-100'}`}>
-        <Icon className={`w-4 h-4 ${accent ? 'text-white' : 'text-gray-600'}`} />
+        ${accent ? 'bg-red-600' : 'bg-gray-100 dark:bg-gray-700'}`}>
+        <Icon className={`w-4 h-4 ${accent ? 'text-white' : 'text-gray-600 dark:text-gray-300'}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className={`text-sm font-semibold ${accent ? 'text-red-600' : 'text-gray-900'}`}>{label}</p>
-        <p className="text-xs text-gray-500">{description}</p>
+        <p className={`text-sm font-semibold ${accent ? 'text-red-600' : 'text-gray-900 dark:text-white'}`}>{label}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
       </div>
       {badge != null && badge > 0 && (
         <span className="min-w-[20px] h-5 px-1 bg-amber-500 text-white text-[10px] font-bold

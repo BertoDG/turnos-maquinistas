@@ -97,12 +97,13 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="flex flex-col bg-gray-50 relative">
+    <div className="flex flex-col bg-gray-50 dark:bg-gray-900 relative">
 
       <button
         onClick={loadMorePast}
-        className="mx-4 mt-3 py-2.5 text-sm text-gray-500 bg-white border border-gray-200
-          rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors font-medium"
+        className="mx-4 mt-3 py-2.5 text-sm text-gray-500 dark:text-gray-400
+          bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+          rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors font-medium"
       >
         ↑ Ver meses anteriores
       </button>
@@ -118,15 +119,16 @@ export default function CalendarPage() {
             }}
           >
             <MonthCalendar month={month} maquinistaId={maquinistaId} />
-            <div className="mx-4 h-px bg-gray-200 mb-2" />
+            <div className="mx-4 h-px bg-gray-200 dark:bg-gray-700 mb-2" />
           </div>
         )
       })}
 
       <button
         onClick={loadMoreFuture}
-        className="mx-4 mb-24 py-2.5 text-sm text-gray-500 bg-white border border-gray-200
-          rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors font-medium"
+        className="mx-4 mb-24 py-2.5 text-sm text-gray-500 dark:text-gray-400
+          bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+          rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors font-medium"
       >
         ↓ Ver más meses
       </button>

@@ -202,22 +202,22 @@ export default function DayDetailPage() {
 
   // ── Pantalla completa (overlay sin animación) ───────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white"
+    <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-gray-900"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
 
       {/* ── Header ─────────────────────────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-2 px-4 h-14 bg-white border-b border-gray-100 shadow-sm">
+      <div className="shrink-0 flex items-center gap-2 px-4 h-14 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 shadow-sm">
         <button
           onClick={handleClose}
-          className="p-2 -ml-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+          className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 transition-colors"
         >
-          <ChevronLeft className="w-5 h-5 text-gray-700" />
+          <ChevronLeft className="w-5 h-5 text-gray-700 dark:text-gray-300" />
         </button>
-        <span className="text-base font-semibold text-gray-900">Detalle del día</span>
+        <span className="text-base font-semibold text-gray-900 dark:text-white">Detalle del día</span>
       </div>
 
       {/* ── Contenido scrollable ───────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto bg-gray-50">
+      <div className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
         {loading ? (
           <div className="flex items-center justify-center py-24">
             <Loader2 className="w-7 h-7 text-red-500 animate-spin" />
@@ -301,10 +301,10 @@ export default function DayDetailPage() {
             </div>
 
             {/* ── Contenido principal ────────────────────────────── */}
-            <div className="bg-gray-50 -mt-5 rounded-t-3xl px-4 pt-5 pb-8 flex flex-col gap-3">
+            <div className="bg-gray-50 dark:bg-gray-900 -mt-5 rounded-t-3xl px-4 pt-5 pb-8 flex flex-col gap-3">
 
               {isRest && (
-                <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100 dark:border-gray-700">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{ backgroundColor: `${bg}` }}>
                     {isVacaciones
@@ -312,25 +312,25 @@ export default function DayDetailPage() {
                       : <Bed       className="w-6 h-6" style={{ color: textCol }} />}
                   </div>
                   <div>
-                    <p className="font-bold text-gray-900">
+                    <p className="font-bold text-gray-900 dark:text-white">
                       {isVacaciones
                         ? (turno?.descripcion ?? 'Día de vacaciones')
                         : (turno?.descripcion ?? 'Día de descanso')}
                     </p>
-                    <p className="text-sm text-gray-500 mt-0.5">No hay servicios programados</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">No hay servicios programados</p>
                   </div>
                 </div>
               )}
 
               {isEspecial && (
-                <div className="bg-white rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 flex items-center gap-4 shadow-sm border border-gray-100 dark:border-gray-700">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                     style={{ backgroundColor: bg }}>
                     <Clock className="w-6 h-6" style={{ color: textCol }} />
                   </div>
                   <div>
-                    <p className="font-bold text-gray-900">{turno?.descripcion ?? turno?.numero}</p>
-                    <p className="text-sm text-gray-500 mt-0.5">Sin servicios de conducción</p>
+                    <p className="font-bold text-gray-900 dark:text-white">{turno?.descripcion ?? turno?.numero}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sin servicios de conducción</p>
                   </div>
                 </div>
               )}
@@ -355,16 +355,16 @@ export default function DayDetailPage() {
               )}
 
               {!isGuardia && data.servicios.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                    <Train className="w-4 h-4 text-gray-500" />
-                    <h3 className="font-bold text-gray-900 text-sm">Servicios del turno</h3>
-                    <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+                    <Train className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    <h3 className="font-bold text-gray-900 dark:text-white text-sm">Servicios del turno</h3>
+                    <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
                       {data.servicios.length} tramo{data.servicios.length !== 1 ? 's' : ''}
                     </span>
                   </div>
 
-                  <div className="divide-y divide-gray-50">
+                  <div className="divide-y divide-gray-50 dark:divide-gray-700">
                     {/* Presentación */}
                     {heroHoraInicio && (
                       <BookendRow
@@ -410,18 +410,18 @@ export default function DayDetailPage() {
               )}
 
               {turno && !isRest && !isEspecial && !guardiaVirtual && data.servicios.length === 0 && (
-                <div className="bg-white rounded-2xl p-4 flex gap-3 items-center shadow-sm border border-gray-100">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 flex gap-3 items-center shadow-sm border border-gray-100 dark:border-gray-700">
                   <Info className="w-5 h-5 text-gray-400 shrink-0" />
-                  <p className="text-sm text-gray-500 leading-snug">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 leading-snug">
                     Los servicios de este turno se verán cuando el administrador suba el catálogo de turnos.
                   </p>
                 </div>
               )}
 
               {!data.asignacion && (
-                <div className="bg-white rounded-2xl p-5 flex flex-col items-center gap-2 text-center shadow-sm border border-gray-100">
-                  <CalendarDays className="w-10 h-10 text-gray-300" />
-                  <p className="text-sm text-gray-500">Sin turno asignado para este día</p>
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 flex flex-col items-center gap-2 text-center shadow-sm border border-gray-100 dark:border-gray-700">
+                  <CalendarDays className="w-10 h-10 text-gray-300 dark:text-gray-600" />
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Sin turno asignado para este día</p>
                 </div>
               )}
 
@@ -515,10 +515,11 @@ export default function DayDetailPage() {
                 <button
                   onClick={() => navigate(`/cambios?fecha=${dateStr}`)}
                   className="w-full flex items-center justify-center gap-2 py-3.5 px-4
-                    bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-700
-                    hover:bg-gray-50 active:bg-gray-100 transition-colors shadow-sm"
+                    bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+                    rounded-2xl text-sm font-medium text-gray-700 dark:text-gray-200
+                    hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors shadow-sm"
                 >
-                  <ArrowLeftRight className="w-4 h-4 text-gray-500" />
+                  <ArrowLeftRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                   Solicitar cambio de turno
                 </button>
               )}
@@ -528,8 +529,9 @@ export default function DayDetailPage() {
                 <button
                   onClick={() => goDay(-1)}
                   className="flex-1 flex items-center justify-center gap-2 py-3 px-4
-                    bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600
-                    hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                    bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+                    rounded-2xl text-sm font-medium text-gray-600 dark:text-gray-300
+                    hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Día anterior
@@ -537,8 +539,9 @@ export default function DayDetailPage() {
                 <button
                   onClick={() => goDay(1)}
                   className="flex-1 flex items-center justify-center gap-2 py-3 px-4
-                    bg-white border border-gray-200 rounded-2xl text-sm font-medium text-gray-600
-                    hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                    bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
+                    rounded-2xl text-sm font-medium text-gray-600 dark:text-gray-300
+                    hover:bg-gray-50 dark:hover:bg-gray-700 active:bg-gray-100 transition-colors"
                 >
                   Día siguiente
                   <ChevronRight className="w-4 h-4" />
@@ -572,18 +575,18 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
   return (
     <div className="flex gap-3 px-4 py-3.5">
       <div className="flex flex-col items-center">
-        <div className="w-3 h-3 rounded-full border-2 border-gray-300 bg-white shrink-0 mt-0.5" />
-        {!isLast && <div className="flex-1 w-0.5 bg-gray-200 my-1 min-h-[24px]" />}
+        <div className="w-3 h-3 rounded-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shrink-0 mt-0.5" />
+        {!isLast && <div className="flex-1 w-0.5 bg-gray-200 dark:bg-gray-700 my-1 min-h-[24px]" />}
       </div>
 
       <div className="flex-1 min-w-0 pb-1">
         {service.numero_tren === 'SC' ? (
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
               <Shield className="w-4 h-4 text-amber-600" />
             </div>
             <div>
-              <p className="font-bold text-gray-900 text-sm leading-none">
+              <p className="font-bold text-gray-900 dark:text-white text-sm leading-none">
                 Guardia en {nombreEstacion(service.origen)}
               </p>
               <p className="text-xs text-amber-600 font-semibold mt-0.5">
@@ -606,7 +609,7 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
                     Tren {service.numero_tren}
                   </button>
                 ) : (
-                  <span className="text-xs font-bold text-gray-500 tracking-wide">
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400 tracking-wide">
                     Tren {service.numero_tren}
                   </span>
                 )}
@@ -615,14 +618,14 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
 
             <div className="flex items-center gap-2">
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-gray-900 text-sm leading-none truncate">{nombreEstacion(service.origen)}</p>
+                <p className="font-bold text-gray-900 dark:text-white text-sm leading-none truncate">{nombreEstacion(service.origen)}</p>
                 <p className="text-xs text-green-600 font-semibold mt-0.5">{formatTime(service.hora_salida)}</p>
               </div>
 
-              <ArrowRight className="w-4 h-4 text-gray-300 shrink-0" />
+              <ArrowRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />
 
               <div className="flex-1 min-w-0">
-                <p className="font-bold text-gray-900 text-sm leading-none truncate">{nombreEstacion(service.destino)}</p>
+                <p className="font-bold text-gray-900 dark:text-white text-sm leading-none truncate">{nombreEstacion(service.destino)}</p>
                 <p className={cn(
                   'text-xs font-semibold mt-0.5',
                   service.dia_siguiente ? 'text-orange-500' : 'text-red-500',
@@ -633,7 +636,7 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
               </div>
 
               {service.km && (
-                <span className="ml-auto text-xs text-gray-400 font-medium shrink-0">
+                <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 font-medium shrink-0">
                   {service.km} km
                 </span>
               )}
@@ -657,22 +660,22 @@ function BookendRow({ tipo, hora, estacion }: {
     <div className="flex gap-3 px-4 py-3">
       {/* Columna izquierda: punto + línea (igual que ServiceRow) */}
       <div className="flex flex-col items-center">
-        <div className="w-3 h-3 rounded-full border-2 border-gray-300 bg-white shrink-0 mt-[3px]" />
-        {isInicio && <div className="flex-1 w-0.5 bg-gray-200 my-1 min-h-[24px]" />}
+        <div className="w-3 h-3 rounded-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shrink-0 mt-[3px]" />
+        {isInicio && <div className="flex-1 w-0.5 bg-gray-200 dark:bg-gray-700 my-1 min-h-[24px]" />}
       </div>
 
       {/* Columna derecha */}
       <div className="flex-1 min-w-0 pb-1">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-bold uppercase tracking-wide text-gray-500">
+          <p className="text-xs font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             {isInicio ? 'Presentación' : 'Fin de jornada'}
           </p>
-          <span className="ml-auto text-xs font-semibold text-gray-600">
+          <span className="ml-auto text-xs font-semibold text-gray-600 dark:text-gray-300">
             {hora}
           </span>
         </div>
         {estacion && (
-          <p className="text-xs text-gray-400 mt-0.5">{estacion}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{estacion}</p>
         )}
       </div>
     </div>
@@ -688,25 +691,25 @@ function GuardiaCard({ titulo, horaInicio, horaFin, duracion }: {
   duracion?: number | null
 }) {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
         <Shield className="w-4 h-4 text-amber-500" />
-        <h3 className="font-bold text-gray-900 text-sm">{titulo}</h3>
+        <h3 className="font-bold text-gray-900 dark:text-white text-sm">{titulo}</h3>
         {duracion && (
-          <span className="ml-auto text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+          <span className="ml-auto text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
             {formatDuration(duracion)}
           </span>
         )}
       </div>
       <div className="px-4 py-5 flex items-center gap-4">
         <div className="flex-1 text-center">
-          <p className="text-xs text-gray-400 mb-1">Inicio</p>
-          <p className="text-2xl font-black text-gray-900">{horaInicio ?? '—'}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Inicio</p>
+          <p className="text-2xl font-black text-gray-900 dark:text-white">{horaInicio ?? '—'}</p>
         </div>
-        <div className="text-gray-300 text-xl font-light">→</div>
+        <div className="text-gray-300 dark:text-gray-600 text-xl font-light">→</div>
         <div className="flex-1 text-center">
-          <p className="text-xs text-gray-400 mb-1">Fin</p>
-          <p className="text-2xl font-black text-gray-900">{horaFin ?? '—'}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Fin</p>
+          <p className="text-2xl font-black text-gray-900 dark:text-white">{horaFin ?? '—'}</p>
         </div>
       </div>
     </div>
@@ -788,11 +791,11 @@ function ShiftProgress({
   const SEG_H = 44
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-        <Clock className="w-4 h-4 text-gray-500" />
-        <h3 className="font-bold text-gray-900 text-sm">Progreso del turno</h3>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+        <Clock className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+        <h3 className="font-bold text-gray-900 dark:text-white text-sm">Progreso del turno</h3>
         {isActive && (
           <span className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-red-600">
             <span className="relative flex h-2 w-2">
@@ -824,15 +827,15 @@ function ShiftProgress({
               <div className="flex flex-col items-center shrink-0" style={{ width: 24 }}>
                 {/* Punto del evento */}
                 <div
-                  className="w-3 h-3 rounded-full border-2 mt-[3px] shrink-0 bg-white relative z-10"
+                  className="w-3 h-3 rounded-full border-2 mt-[3px] shrink-0 bg-white dark:bg-gray-800 relative z-10"
                   style={isPast
                     ? { borderColor: accentColor }
-                    : { borderColor: '#d1d5db', backgroundColor: '#f9fafb' }}
+                    : { borderColor: '#6b7280', backgroundColor: 'transparent' }}
                 />
                 {/* Segmento de línea */}
                 {!isLast && (
                   <div
-                    className="relative rounded-full bg-gray-100 my-1"
+                    className="relative rounded-full bg-gray-100 dark:bg-gray-700 my-1"
                     style={{ width: 2, height: SEG_H }}
                   >
                     {/* Relleno progreso */}
@@ -868,18 +871,18 @@ function ShiftProgress({
                 <div className="flex items-start gap-1 mt-[1px]">
                   <div className="flex-1 min-w-0">
                     <p className={cn('text-xs font-semibold leading-tight',
-                      isPast ? 'text-gray-800' : 'text-gray-400')}>
+                      isPast ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-600')}>
                       {ev.label}
                     </p>
                     {ev.sub && (
                       <p className={cn('text-xs mt-0.5 leading-tight',
-                        isPast ? 'text-gray-500' : 'text-gray-300')}>
+                        isPast ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')}>
                         {ev.sub}
                       </p>
                     )}
                   </div>
                   <span className={cn('text-xs font-mono tabular-nums shrink-0 ml-1',
-                    isPast ? 'text-gray-500' : 'text-gray-300')}>
+                    isPast ? 'text-gray-500 dark:text-gray-400' : 'text-gray-300 dark:text-gray-600')}>
                     {fmtMin(ev.min)}
                   </span>
                 </div>
