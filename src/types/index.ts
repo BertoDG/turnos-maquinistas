@@ -47,6 +47,7 @@ export interface Profile {
   activo: boolean
   avatar_url: string | null
   telefono: string | null
+  observaciones: string | null
   created_at: string
   updated_at: string
 }

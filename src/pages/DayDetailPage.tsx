@@ -7,6 +7,7 @@ import { formatDate, formatTime, formatDuration, cn } from '@/lib/utils'
 import { computeTurnoColors } from '@/lib/turnoColors'
 import { useEstaciones } from '@/hooks/useEstaciones'
 import { useColorPrefs } from '@/contexts/ColorPrefsContext'
+import TrainDetailSheet from '@/components/TrainDetailSheet'
 import {
   Train, Clock, MapPin, Bed, Umbrella, ArrowRight,
   Loader2, CalendarDays, ArrowLeftRight, Info,
@@ -58,6 +59,7 @@ export default function DayDetailPage() {
   const [loading, setLoading] = useState(true)
   const [reverting, setReverting] = useState(false)
   const [showRevertConfirm, setShowRevertConfirm] = useState(false)
+  const [selectedTren, setSelectedTren] = useState<string | null>(null)
   const nombreEstacion = useEstaciones()
   const { prefs } = useColorPrefs()
 
@@ -378,6 +380,7 @@ export default function DayDetailPage() {
                         key={svc.id}
                         service={svc}
                         isLast={!heroHoraFin && idx === data.servicios.length - 1}
+                        onTrainTap={svc.numero_tren && svc.numero_tren !== 'SC' ? () => setSelectedTren(svc.numero_tren) : undefined}
                         nombreEstacion={nombreEstacion}
                       />
                     ))}
@@ -546,16 +549,25 @@ export default function DayDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Sheet detalle de tren LH-820 */}
+      {selectedTren && (
+        <TrainDetailSheet
+          numeroTren={selectedTren}
+          onClose={() => setSelectedTren(null)}
+        />
+      )}
     </div>
   )
 }
 
 // ── ServiceRow ─────────────────────────────────────────────────
 
-function ServiceRow({ service, isLast, nombreEstacion }: {
+function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
   service: ServicioTurno
   isLast: boolean
   nombreEstacion: (codigo: string) => string
+  onTrainTap?: () => void
 }) {
   return (
     <div className="flex gap-3 px-4 py-3.5">
@@ -585,9 +597,19 @@ function ServiceRow({ service, isLast, nombreEstacion }: {
             {service.numero_tren && (
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Train className="w-3 h-3 text-gray-400 shrink-0" />
-                <span className="text-xs font-bold text-gray-500 tracking-wide">
-                  Tren {service.numero_tren}
-                </span>
+                {onTrainTap ? (
+                  <button
+                    onClick={onTrainTap}
+                    className="text-xs font-bold text-blue-600 dark:text-blue-400 tracking-wide
+                      underline underline-offset-2 hover:text-blue-700 active:opacity-70 transition-colors"
+                  >
+                    Tren {service.numero_tren}
+                  </button>
+                ) : (
+                  <span className="text-xs font-bold text-gray-500 tracking-wide">
+                    Tren {service.numero_tren}
+                  </span>
+                )}
               </div>
             )}
 

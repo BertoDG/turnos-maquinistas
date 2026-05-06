@@ -13,9 +13,14 @@ function toDatetime(fechaStr: string, hhmm: string): Date {
 
 export function formatMinutos(minutos: number): string {
   if (minutos < 60) return `${minutos} min`
-  const h = Math.floor(minutos / 60)
-  const m = minutos % 60
-  return m === 0 ? `${h}h` : `${h}h ${m}m`
+  const totalHoras = Math.floor(minutos / 60)
+  const mins       = minutos % 60
+  if (totalHoras < 24) {
+    return mins === 0 ? `${totalHoras}h` : `${totalHoras}h ${mins}m`
+  }
+  const dias  = Math.floor(totalHoras / 24)
+  const horas = totalHoras % 24
+  return horas === 0 ? `${dias}d` : `${dias}d ${horas}h`
 }
 
 export function formatFechaHora(fechaStr: string, hhmm: string): string {

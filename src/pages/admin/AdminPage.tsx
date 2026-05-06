@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
+import { usePendingUsers } from '@/hooks/usePendingUsers'
 import type { PdfUpload, Profile } from '@/types'
 import { formatDate } from '@/lib/utils'
 import {
   Upload, Users, FileText, CheckCircle, XCircle,
-  Clock, Loader2, ChevronRight, Plus, RefreshCw
+  Clock, Loader2, ChevronRight, Plus, RefreshCw, AlertCircle
 } from 'lucide-react'
 
 const ESTADO_CONFIG = {
@@ -16,9 +18,12 @@ const ESTADO_CONFIG = {
 } as const
 
 export default function AdminPage() {
-  const navigate = useNavigate()
-  const [uploads, setUploads] = useState<PdfUpload[]>([])
-  const [maquinistas, setMaquinistas] = useState<Profile[]>([])
+  const navigate   = useNavigate()
+  const { isAdmin } = useAuth()
+  const pendingUsers = usePendingUsers(isAdmin)
+
+  const [uploads,      setUploads]      = useState<PdfUpload[]>([])
+  const [maquinistas,  setMaquinistas]  = useState<Profile[]>([])
   const [loadingUploads, setLoadingUploads] = useState(true)
 
   useEffect(() => {
@@ -66,6 +71,26 @@ export default function AdminPage() {
 
   return (
     <div className="flex flex-col gap-4 px-4 pt-4 pb-8">
+
+      {/* Alerta de usuarios pendientes */}
+      {pendingUsers > 0 && (
+        <button
+          onClick={() => navigate('/admin/usuarios')}
+          className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3.5 text-left w-full hover:bg-amber-100 transition-colors"
+        >
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">
+              {pendingUsers} usuario{pendingUsers > 1 ? 's' : ''} pendiente{pendingUsers > 1 ? 's' : ''} de activación
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Toca para revisar y activar las cuentas
+            </p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        </button>
+      )}
+
       {/* Stats rápidas */}
       <div className="grid grid-cols-2 gap-3">
         <StatCard
@@ -94,8 +119,13 @@ export default function AdminPage() {
         <ActionRow
           icon={Users}
           label="Gestionar maquinistas"
-          description={`${maquinistas.length} usuarios activos`}
+          description={
+            pendingUsers > 0
+              ? `${maquinistas.length} activos · ${pendingUsers} pendiente${pendingUsers > 1 ? 's' : ''}`
+              : `${maquinistas.length} usuarios activos`
+          }
           onClick={() => navigate('/admin/usuarios')}
+          badge={pendingUsers > 0 ? pendingUsers : undefined}
         />
         <ActionRow
           icon={RefreshCw}
@@ -178,9 +208,9 @@ function StatCard({ label, value, icon: Icon, color }: {
   )
 }
 
-function ActionRow({ icon: Icon, label, description, onClick, accent }: {
-  icon: React.ElementType; label: string; description: string;
-  onClick: () => void; accent?: boolean
+function ActionRow({ icon: Icon, label, description, onClick, accent, badge }: {
+  icon: React.ElementType; label: string; description: string | React.ReactNode;
+  onClick: () => void; accent?: boolean; badge?: number
 }) {
   return (
     <button
@@ -195,6 +225,12 @@ function ActionRow({ icon: Icon, label, description, onClick, accent }: {
         <p className={`text-sm font-semibold ${accent ? 'text-red-600' : 'text-gray-900'}`}>{label}</p>
         <p className="text-xs text-gray-500">{description}</p>
       </div>
+      {badge != null && badge > 0 && (
+        <span className="min-w-[20px] h-5 px-1 bg-amber-500 text-white text-[10px] font-bold
+          rounded-full flex items-center justify-center shrink-0">
+          {badge > 9 ? '9+' : badge}
+        </span>
+      )}
       <ChevronRight className="w-4 h-4 text-gray-300 shrink-0" />
     </button>
   )

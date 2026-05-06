@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
+import type { RegisterData } from '@/contexts/AuthContext'
 import { Train, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowLeft } from 'lucide-react'
 
 type Mode = 'login' | 'register' | 'pending'
@@ -19,7 +20,7 @@ export default function LoginPage() {
         <p className="text-gray-400 mt-1 text-sm">Gestión de turnos · RENFE</p>
       </div>
 
-      {mode === 'login'   && <LoginForm   onRegister={() => setMode('register')} signIn={signIn} />}
+      {mode === 'login'    && <LoginForm    onRegister={() => setMode('register')} signIn={signIn} />}
       {mode === 'register' && <RegisterForm onBack={() => setMode('login')} signUp={signUp} onSuccess={() => setMode('pending')} />}
       {mode === 'pending'  && <PendingCard  onBack={() => setMode('login')} />}
 
@@ -138,28 +139,33 @@ function LoginForm({ onRegister, signIn }: {
 
 // ── RegisterForm ─────────────────────────────────────────────
 
+const INPUT_CLASS = `w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-base
+  focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent
+  placeholder:text-gray-400 transition-all disabled:opacity-50`
+
 function RegisterForm({ onBack, signUp, onSuccess }: {
-  onBack: () => void
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>
+  onBack:    () => void
+  signUp:    (data: RegisterData) => Promise<{ error: string | null }>
   onSuccess: () => void
 }) {
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [confirm,  setConfirm]  = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [error,    setError]    = useState<string | null>(null)
-  const [loading,  setLoading]  = useState(false)
+  const [matricula,     setMatricula]     = useState('')
+  const [nombre,        setNombre]        = useState('')
+  const [apellidos,     setApellidos]     = useState('')
+  const [telefono,      setTelefono]      = useState('')
+  const [observaciones, setObservaciones] = useState('')
+  const [password,      setPassword]      = useState('')
+  const [confirm,       setConfirm]       = useState('')
+  const [showPass,      setShowPass]      = useState(false)
+  const [error,         setError]         = useState<string | null>(null)
+  const [loading,       setLoading]       = useState(false)
+
+  const canSubmit = matricula.trim() && nombre.trim() && apellidos.trim() && password && confirm
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
-    if (!email.trim() || !password || !confirm) return
-
-    if (!email.includes('@')) {
-      setError('Introduce un email válido.')
-      return
-    }
+    if (!canSubmit) return
     if (password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres.')
       return
@@ -170,7 +176,14 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
     }
 
     setLoading(true)
-    const { error: err } = await signUp(email.trim(), password)
+    const { error: err } = await signUp({
+      matricula,
+      nombre,
+      apellidos,
+      password,
+      telefono:      telefono.trim() || undefined,
+      observaciones: observaciones.trim() || undefined,
+    })
     setLoading(false)
 
     if (err) { setError(err); return }
@@ -189,28 +202,82 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
 
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Solicitar acceso</h2>
       <p className="text-gray-500 text-sm mb-6">
-        Crea tu cuenta. Un administrador la activará cuando lo verifique.
+        Rellena tus datos. Un administrador activará tu cuenta.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+
+        {/* Matrícula */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Matrícula <span className="text-red-500">*</span>
+          </label>
           <input
-            type="email"
-            autoComplete="email"
+            type="text"
             autoFocus
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="tu@email.com"
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-base
-              focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent
-              placeholder:text-gray-400 transition-all"
+            autoComplete="username"
+            value={matricula}
+            onChange={(e) => setMatricula(e.target.value)}
+            placeholder="Ej: 123456"
+            className={INPUT_CLASS}
+            disabled={loading}
+          />
+          <p className="text-xs text-gray-400 mt-1">Será tu nombre de usuario para iniciar sesión</p>
+        </div>
+
+        {/* Nombre y Apellidos */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Nombre <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              autoComplete="given-name"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Juan"
+              className={INPUT_CLASS}
+              disabled={loading}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Apellidos <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              autoComplete="family-name"
+              value={apellidos}
+              onChange={(e) => setApellidos(e.target.value)}
+              placeholder="García López"
+              className={INPUT_CLASS}
+              disabled={loading}
+            />
+          </div>
+        </div>
+
+        {/* Teléfono (opcional) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Teléfono <span className="text-gray-400 font-normal">(opcional)</span>
+          </label>
+          <input
+            type="tel"
+            autoComplete="tel"
+            value={telefono}
+            onChange={(e) => setTelefono(e.target.value)}
+            placeholder="612 345 678"
+            className={INPUT_CLASS}
             disabled={loading}
           />
         </div>
 
+        {/* Contraseña */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Contraseña</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Contraseña <span className="text-red-500">*</span>
+          </label>
           <div className="relative">
             <input
               type={showPass ? 'text' : 'password'}
@@ -218,9 +285,7 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Mínimo 6 caracteres"
-              className="w-full px-4 py-3 pr-12 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-base
-                focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent
-                placeholder:text-gray-400 transition-all"
+              className={INPUT_CLASS + ' pr-12'}
               disabled={loading}
             />
             <button
@@ -234,18 +299,34 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Repite la contraseña</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Repite la contraseña <span className="text-red-500">*</span>
+          </label>
           <input
             type={showPass ? 'text' : 'password'}
             autoComplete="new-password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             placeholder="••••••••"
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-base
-              focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent
-              placeholder:text-gray-400 transition-all"
+            className={INPUT_CLASS}
             disabled={loading}
           />
+        </div>
+
+        {/* Observaciones (opcional, solo admin las verá) */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Observaciones <span className="text-gray-400 font-normal">(opcional)</span>
+          </label>
+          <textarea
+            rows={2}
+            value={observaciones}
+            onChange={(e) => setObservaciones(e.target.value)}
+            placeholder="Cualquier aclaración para el administrador…"
+            className={INPUT_CLASS + ' resize-none'}
+            disabled={loading}
+          />
+          <p className="text-xs text-gray-400 mt-1">Solo visible para el administrador</p>
         </div>
 
         {error && (
@@ -257,7 +338,7 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
 
         <button
           type="submit"
-          disabled={loading || !email.trim() || !password || !confirm}
+          disabled={loading || !canSubmit}
           className="w-full bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed
             text-white font-semibold py-3.5 px-6 rounded-xl transition-colors
             flex items-center justify-center gap-2 text-base shadow-lg shadow-red-600/30 mt-2"

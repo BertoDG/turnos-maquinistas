@@ -73,9 +73,9 @@ export default function UsersPage() {
     await loadProfiles()
   }
 
-  // Pendiente = sin activar Y sin perfil completado
-  const pendingCount = profiles.filter(p => !p.activo && !p.nombre && !p.apellidos).length
-  const activeCount  = profiles.filter(p => p.activo).length
+  // Pendiente = cualquier usuario con activo=false (tanto autoregistrados como desactivados)
+  const pendingCount  = profiles.filter(p => !p.activo).length
+  const activeCount   = profiles.filter(p => p.activo).length
   const inactiveCount = profiles.filter(p => !p.activo).length
 
   const searchLower = search.trim().toLowerCase()
@@ -324,10 +324,9 @@ function UserRow({ profile: p, callerId, callerRole, isEditing, onToggle, onEdit
   onSaved: () => void
   onDelete: () => void
 }) {
-  // pendiente = sin activar y sin perfil → admin debe activar
-  // incompleto = activado pero sin nombre → usuario debe completar perfil
-  const isPending    = !p.activo && !p.nombre && !p.apellidos
-  const isIncomplete = p.activo  && !p.nombre && !p.apellidos
+  // pendiente = sin activar (autoregistrado o desactivado)
+  const isPending    = !p.activo
+  const isIncomplete = false  // ya no aplica: el registro recoge nombre siempre
   const rConf = ROLE_CONFIG[p.role]
   const RoleIcon = rConf.icon
 
@@ -344,11 +343,11 @@ function UserRow({ profile: p, callerId, callerRole, isEditing, onToggle, onEdit
         {/* Avatar */}
         <div className={`w-10 h-10 rounded-full flex items-center justify-center
           font-bold text-sm shrink-0 overflow-hidden
-          ${isPending ? 'bg-amber-100 text-amber-700' : isIncomplete ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}>
+          ${isPending ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
           {p.avatar_url
             ? <img src={p.avatar_url} alt="" className="w-full h-full object-cover" />
-            : isPending    ? <Clock className="w-5 h-5" />
-            : isIncomplete ? <User  className="w-5 h-5" />
+            : isPending && !p.nombre
+            ? <Clock className="w-5 h-5" />
             : getInitials(p.nombre, p.apellidos)
           }
         </div>
@@ -357,13 +356,18 @@ function UserRow({ profile: p, callerId, callerRole, isEditing, onToggle, onEdit
         <div className="flex-1 min-w-0">
           {isPending ? (
             <>
-              <p className="text-sm font-semibold text-amber-800 truncate">Pendiente de activar</p>
-              <p className="text-xs text-amber-600 truncate">{p.matricula}</p>
-            </>
-          ) : isIncomplete ? (
-            <>
-              <p className="text-sm font-semibold text-blue-700 truncate">Activado · completando perfil</p>
-              <p className="text-xs text-blue-500 truncate">{p.matricula}</p>
+              <p className="text-sm font-semibold text-amber-800 truncate">
+                {p.nombre ? `${p.nombre} ${p.apellidos}` : 'Sin nombre'}
+                {' '}· <span className="font-normal">Pendiente</span>
+              </p>
+              <p className="text-xs text-amber-600 truncate">
+                {p.matricula}{p.telefono ? ` · ${p.telefono}` : ''}
+              </p>
+              {p.observaciones && (
+                <p className="text-xs text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 mt-0.5 truncate">
+                  💬 {p.observaciones}
+                </p>
+              )}
             </>
           ) : (
             <>
@@ -389,27 +393,24 @@ function UserRow({ profile: p, callerId, callerRole, isEditing, onToggle, onEdit
         {isPending ? (
           /* Pendiente: botón prominente de activar (solo si puede operar) */
           canOperate ? (
-            <button
-              onClick={onToggle}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
-                bg-green-600 text-white hover:bg-green-700 active:bg-green-800 transition-colors"
-            >
-              <UserCheck className="w-3.5 h-3.5" />
-              Activar
-            </button>
-          ) : (
-            <span className="shrink-0 text-[10px] text-gray-400 italic pr-1">Solo lectura</span>
-          )
-        ) : isIncomplete ? (
-          /* Activado pero pendiente de que el usuario complete su perfil */
-          canOperate ? (
-            <button
-              onClick={onToggle}
-              title="Desactivar"
-              className="shrink-0 p-1 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <ToggleRight className="w-6 h-6 text-green-500" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={onEdit}
+                title="Editar antes de activar"
+                className={`p-1.5 rounded-lg transition-colors
+                  ${isEditing ? 'bg-gray-100 text-gray-700' : 'text-gray-400 hover:bg-gray-50 hover:text-gray-700'}`}
+              >
+                {isEditing ? <ChevronUp className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={onToggle}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold
+                  bg-green-600 text-white hover:bg-green-700 active:bg-green-800 transition-colors"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                Activar
+              </button>
+            </div>
           ) : (
             <span className="shrink-0 text-[10px] text-gray-400 italic pr-1">Solo lectura</span>
           )
@@ -469,13 +470,14 @@ function EditProfileForm({ profile: p, callerRole, onSaved, onCancel }: {
   onCancel: () => void
 }) {
   const [form, setForm] = useState({
-    matricula: p.matricula ?? '',
-    nombre:    p.nombre    ?? '',
-    apellidos: p.apellidos ?? '',
-    role:      p.role      as UserRole,
-    depot:     p.depot     ?? '',
-    telefono:  p.telefono  ?? '',
-    activo:    p.activo,
+    matricula:     p.matricula     ?? '',
+    nombre:        p.nombre        ?? '',
+    apellidos:     p.apellidos     ?? '',
+    role:          p.role          as UserRole,
+    depot:         p.depot         ?? '',
+    telefono:      p.telefono      ?? '',
+    observaciones: p.observaciones ?? '',
+    activo:        p.activo,
   })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState<string | null>(null)
@@ -492,14 +494,15 @@ function EditProfileForm({ profile: p, callerRole, onSaved, onCancel }: {
     }
     setLoading(true)
     const { error: rpcErr } = await supabase.rpc('admin_actualizar_perfil', {
-      p_user_id:   p.id,
-      p_matricula: form.matricula.trim(),
-      p_nombre:    form.nombre.trim(),
-      p_apellidos: form.apellidos.trim(),
-      p_role:      form.role,
-      p_depot:     form.depot.trim()    || null,
-      p_telefono:  form.telefono.trim() || null,
-      p_activo:    form.activo,
+      p_user_id:       p.id,
+      p_matricula:     form.matricula.trim(),
+      p_nombre:        form.nombre.trim(),
+      p_apellidos:     form.apellidos.trim(),
+      p_role:          form.role,
+      p_depot:         form.depot.trim()         || null,
+      p_telefono:      form.telefono.trim()      || null,
+      p_activo:        form.activo,
+      p_observaciones: form.observaciones.trim() || null,
     })
     setLoading(false)
     if (rpcErr) { setError(rpcErr.message); return }
@@ -559,6 +562,20 @@ function EditProfileForm({ profile: p, callerRole, onSaved, onCancel }: {
         </div>
       </div>
 
+      {/* Observaciones del usuario (solo lectura admin) */}
+      <div>
+        <label className="text-xs font-medium text-gray-600 block mb-1">
+          Observaciones del usuario
+        </label>
+        <textarea
+          rows={2}
+          value={form.observaciones}
+          onChange={e => set('observaciones', e.target.value)}
+          placeholder="Sin observaciones"
+          className={inputCls + ' resize-none'}
+        />
+      </div>
+
       {/* Activo toggle */}
       <label className="flex items-center gap-2.5 cursor-pointer">
         <div
@@ -583,7 +600,7 @@ function EditProfileForm({ profile: p, callerRole, onSaved, onCancel }: {
           className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold
             hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          {loading ? 'Guardando...' : 'Guardar y activar'}
+          {loading ? 'Guardando...' : 'Guardar'}
         </button>
       </div>
     </div>

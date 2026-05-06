@@ -9,8 +9,10 @@ import type { ColorPrefs, ColorPrefKey, SlotColorProp } from '@/lib/colorPrefs'
 import { getTurnoMeta } from '@/lib/turnoNomenclatura'
 import {
   LogOut, Train, User, Shield, ChevronRight,
-  Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Palette, RotateCcw, Trash2, Pencil, Check,
+  Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Palette, RotateCcw, Trash2, Pencil, Check, Camera,
+  Sun, Moon, Monitor,
 } from 'lucide-react'
+import type { ThemePreference } from '@/lib/colorPrefs'
 
 // ── Tipos de estado ────────────────────────────────────────────
 type UploadStatus = 'idle' | 'leyendo' | 'guardando' | 'done' | 'error'
@@ -29,6 +31,83 @@ export default function ProfilePage() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadState, setUploadState] = useState<UploadState>({ status: 'idle', message: '' })
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // ── Foto de perfil ───────────────────────────────────────────
+  const avatarInputRef                        = useRef<HTMLInputElement>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarError,     setAvatarError]     = useState<string | null>(null)
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !profile) return
+
+    // Validaciones básicas
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Solo se permiten imágenes (JPG, PNG, etc.)')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('La imagen no puede superar los 5 MB.')
+      return
+    }
+
+    setAvatarUploading(true)
+    setAvatarError(null)
+
+    try {
+      const ext      = file.name.split('.').pop() ?? 'jpg'
+      const path     = `${profile.id}/avatar.${ext}`
+
+      // Subir a Supabase Storage (bucket "avatars")
+      const { error: upErr } = await supabase.storage
+        .from('avatars')
+        .upload(path, file, { upsert: true, contentType: file.type })
+
+      if (upErr) throw upErr
+
+      // Obtener URL pública
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(path)
+
+      // Añadir cache-bust para forzar recarga
+      const bustUrl = `${publicUrl}?t=${Date.now()}`
+
+      // Actualizar perfil en BD
+      const { error: dbErr } = await supabase
+        .from('profiles')
+        .update({ avatar_url: bustUrl, updated_at: new Date().toISOString() })
+        .eq('id', profile.id)
+
+      if (dbErr) throw dbErr
+
+      await refreshProfile()
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Error al subir la foto')
+    } finally {
+      setAvatarUploading(false)
+      // Limpiar input para permitir volver a seleccionar la misma imagen
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    if (!profile?.avatar_url) return
+    setAvatarUploading(true)
+    setAvatarError(null)
+    try {
+      // Quitar de BD
+      await supabase
+        .from('profiles')
+        .update({ avatar_url: null, updated_at: new Date().toISOString() })
+        .eq('id', profile.id)
+      await refreshProfile()
+    } catch (err) {
+      setAvatarError(err instanceof Error ? err.message : 'Error al eliminar la foto')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
 
   // ── Edición de datos personales ──────────────────────────────
   const [editingProfile, setEditingProfile] = useState(false)
@@ -208,10 +287,61 @@ export default function ProfilePage() {
 
       {/* Avatar y nombre */}
       <div className="bg-white rounded-2xl p-6 flex flex-col items-center shadow-sm border border-gray-100">
-        <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center
-          text-red-700 font-bold text-2xl mb-3">
-          {getInitials(profile.nombre, profile.apellidos)}
+        {/* Input oculto para seleccionar foto */}
+        <input
+          ref={avatarInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleAvatarChange}
+          className="hidden"
+        />
+
+        {/* Foto / iniciales + botón cámara */}
+        <div className="relative mb-3">
+          <div className="w-24 h-24 rounded-full overflow-hidden bg-red-100
+            flex items-center justify-center text-red-700 font-bold text-2xl">
+            {profile.avatar_url
+              ? <img src={profile.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+              : getInitials(profile.nombre, profile.apellidos)
+            }
+          </div>
+
+          {/* Overlay de carga */}
+          {avatarUploading && (
+            <div className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center">
+              <Loader2 className="w-6 h-6 text-white animate-spin" />
+            </div>
+          )}
+
+          {/* Botón cambiar foto */}
+          {!avatarUploading && (
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              className="absolute bottom-0 right-0 w-8 h-8 bg-red-600 rounded-full
+                flex items-center justify-center shadow-md
+                hover:bg-red-700 active:bg-red-800 transition-colors"
+              title="Cambiar foto de perfil"
+            >
+              <Camera className="w-4 h-4 text-white" />
+            </button>
+          )}
         </div>
+
+        {/* Error de avatar */}
+        {avatarError && (
+          <p className="text-xs text-red-600 mb-2 text-center">{avatarError}</p>
+        )}
+
+        {/* Botón quitar foto (si tiene) */}
+        {profile.avatar_url && !avatarUploading && (
+          <button
+            onClick={handleRemoveAvatar}
+            className="text-xs text-gray-400 hover:text-red-500 transition-colors mb-2"
+          >
+            Quitar foto
+          </button>
+        )}
+
         <h2 className="text-lg font-bold text-gray-900 text-center">
           {profile.nombre} {profile.apellidos}
         </h2>
@@ -578,17 +708,53 @@ function ColorEditor() {
     setTimeout(() => setSaved(false), 1500)
   }
 
+  async function handleTheme(theme: ThemePreference) {
+    const next: ColorPrefs = { ...prefs, theme }
+    setSaving(true); setSaved(false)
+    await savePrefs(next)
+    setSaving(false); setSaved(true)
+    setTimeout(() => setSaved(false), 1500)
+  }
+
+  const THEME_OPTIONS: { value: ThemePreference; label: string; Icon: React.ElementType }[] = [
+    { value: 'light',  label: 'Claro',    Icon: Sun     },
+    { value: 'dark',   label: 'Oscuro',   Icon: Moon    },
+    { value: 'system', label: 'Sistema',  Icon: Monitor },
+  ]
+
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 flex flex-col gap-3">
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex flex-col gap-3">
       {/* Cabecera */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Palette className="w-4 h-4 text-gray-500" />
-          <h3 className="text-sm font-bold text-gray-800">Personalización del Calendario</h3>
+          <Palette className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">Personalización del Calendario</h3>
         </div>
         <div className="flex items-center gap-2">
           {saving && <span className="text-xs text-gray-400">Guardando…</span>}
-          {saved  && <span className="text-xs text-green-600 font-medium">✓ Guardado</span>}
+          {saved  && <span className="text-xs text-green-500 font-medium">✓ Guardado</span>}
+        </div>
+      </div>
+
+      {/* Selector de tema */}
+      <div>
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Tema de la aplicación</p>
+        <div className="flex gap-2">
+          {THEME_OPTIONS.map(({ value, label, Icon }) => (
+            <button
+              key={value}
+              onClick={() => handleTheme(value)}
+              className={`flex-1 flex flex-col items-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold
+                border transition-colors
+                ${prefs.theme === value
+                  ? 'bg-red-600 text-white border-red-600'
+                  : 'bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-100 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600'
+                }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -596,14 +762,14 @@ function ColorEditor() {
       <button
         onClick={handleToggleHoras}
         className="flex items-center justify-between w-full px-3 py-2.5
-          bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100 transition-colors"
+          bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600 active:bg-gray-100 transition-colors"
       >
         <div className="flex flex-col items-start gap-0.5">
-          <span className="text-sm font-medium text-gray-800">Mostrar horas en el calendario</span>
-          <span className="text-xs text-gray-400">Hora de inicio y fin en cada celda del día</span>
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-100">Mostrar horas en el calendario</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">Hora de inicio y fin en cada celda del día</span>
         </div>
         <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3
-          ${prefs.mostrar_horas ? 'bg-red-500' : 'bg-gray-300'}`}
+          ${prefs.mostrar_horas ? 'bg-red-500' : 'bg-gray-300 dark:bg-gray-600'}`}
         >
           <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform
             ${prefs.mostrar_horas ? 'translate-x-5' : 'translate-x-0.5'}`}
@@ -615,14 +781,14 @@ function ColorEditor() {
       <button
         onClick={handleToggleHeredarColor}
         className="flex items-center justify-between w-full px-3 py-2.5
-          bg-gray-50 rounded-xl border border-gray-100 active:bg-gray-100 transition-colors"
+          bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600 active:bg-gray-100 transition-colors"
       >
         <div className="flex flex-col items-start gap-0.5">
-          <span className="text-sm font-medium text-gray-800">Color heredado en días cambiados</span>
-          <span className="text-xs text-gray-400">Usa el color del nuevo turno en lugar del color fijo</span>
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-100">Color heredado en días cambiados</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">Usa el color del nuevo turno en lugar del color fijo</span>
         </div>
         <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3
-          ${prefs.cambio_heredar_color ? 'bg-red-500' : 'bg-gray-300'}`}
+          ${prefs.cambio_heredar_color ? 'bg-red-500' : 'bg-gray-300 dark:bg-gray-600'}`}
         >
           <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform
             ${prefs.cambio_heredar_color ? 'translate-x-5' : 'translate-x-0.5'}`}

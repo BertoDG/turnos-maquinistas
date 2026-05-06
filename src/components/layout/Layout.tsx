@@ -29,7 +29,7 @@ export default function Layout() {
 
   return (
     <MainScrollContext.Provider value={calendarScrollRef as React.RefObject<HTMLElement>}>
-      <div className="flex flex-col h-screen h-dvh bg-gray-50 overflow-hidden">
+      <div className="flex flex-col h-screen h-dvh bg-gray-50 dark:bg-gray-900 overflow-hidden">
         <TopBar />
 
         <div className="flex-1 relative overflow-hidden">
@@ -39,7 +39,7 @@ export default function Layout() {
           {/* pointer-events:none evita interacción mientras está oculto */}
           <div
             ref={calendarScrollRef}
-            className="absolute inset-0 overflow-y-auto pb-20 bg-gray-50"
+            className="absolute inset-0 overflow-y-auto pb-20 bg-gray-50 dark:bg-gray-900"
             style={{
               visibility: isCalendarRoute ? 'visible' : 'hidden',
               pointerEvents: isCalendarRoute ? 'auto' : 'none',
@@ -55,7 +55,7 @@ export default function Layout() {
 
           {/* ── Otras pestañas — Outlet normal ── */}
           {!isCalendarRoute && (
-            <div className="absolute inset-0 overflow-y-auto pb-20">
+            <div className="absolute inset-0 overflow-y-auto pb-20 dark:bg-gray-900">
               <Outlet />
             </div>
           )}

@@ -3,6 +3,15 @@ import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types'
 
+export interface RegisterData {
+  matricula:     string
+  nombre:        string
+  apellidos:     string
+  password:      string
+  telefono?:     string
+  observaciones?: string
+}
+
 interface AuthContextType {
   user: User | null
   session: Session | null
@@ -11,7 +20,7 @@ interface AuthContextType {
   isAdmin: boolean
   isActive: boolean
   signIn: (emailOrMatricula: string, password: string) => Promise<{ error: string | null }>
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>
+  signUp: (data: RegisterData) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -138,15 +147,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   /**
-   * Registra un nuevo usuario. El perfil se crea con activo=false hasta que el admin lo active.
+   * Registra un nuevo usuario con matrícula como identificador.
+   * El perfil se crea con activo=false hasta que el admin lo active.
    */
-  async function signUp(email: string, password: string): Promise<{ error: string | null }> {
+  async function signUp(data: RegisterData): Promise<{ error: string | null }> {
     try {
-      const { error } = await supabase.auth.signUp({ email: email.trim(), password })
+      const email = `${data.matricula.trim().toLowerCase()}@turnosmaq.internal`
+
+      const { error } = await supabase.auth.signUp({
+        email,
+        password: data.password,
+        options: {
+          data: {
+            matricula:     data.matricula.trim(),
+            nombre:        data.nombre.trim(),
+            apellidos:     data.apellidos.trim(),
+            telefono:      data.telefono?.trim() || null,
+            observaciones: data.observaciones?.trim() || null,
+          },
+        },
+      })
 
       if (error) {
-        if (error.message.includes('already registered')) {
-          return { error: 'Este email ya está registrado. Prueba a iniciar sesión.' }
+        if (error.message.includes('already registered') || error.message.includes('already been registered')) {
+          return { error: 'Esta matrícula ya está registrada. Contacta con el administrador.' }
         }
         if (error.message.includes('Password should be')) {
           return { error: 'La contraseña debe tener al menos 6 caracteres.' }

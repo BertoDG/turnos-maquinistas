@@ -7,6 +7,7 @@ import { getInitials } from '@/lib/utils'
 
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Mis Turnos',
+  '/buscar': 'Buscar',
   '/companeros': 'Compañeros',
   '/cambios': 'Cambios',
   '/notificaciones': 'Notificaciones',
@@ -27,14 +28,14 @@ function TurnoCountdown({ userId }: { userId: string }) {
   const enTurno = status?.tipo === 'en_turno' ? status : null
 
   return (
-    <div className="border-t border-gray-100 bg-gray-50">
+    <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
       {/* Fila 1: reloj + estado del turno */}
       <div className="px-4 py-1.5 flex items-center gap-3">
-        <span className="text-xs font-mono font-semibold text-gray-500 shrink-0">
+        <span className="text-xs font-mono font-semibold text-gray-500 dark:text-gray-400 shrink-0">
           {horaActual}
         </span>
 
-        <div className="w-px h-3 bg-gray-200 shrink-0" />
+        <div className="w-px h-3 bg-gray-200 dark:bg-gray-700 shrink-0" />
 
         {status === null ? (
           <span className="text-xs text-gray-400">Sin turnos próximos</span>
@@ -127,23 +128,23 @@ export default function TopBar() {
     if (isDayDetail) {
       navigate('/', { replace: true })
     } else if (isCompaneroCalendar) {
-      navigate('/companeros')
+      navigate(-1)
     } else {
       navigate(-1)
     }
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-gray-100 shadow-sm">
+    <header className="sticky top-0 z-40 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 shadow-sm">
       {/* Fila principal */}
       <div className="flex items-center gap-3 px-4 h-14">
         {/* Back button o logo */}
         {canGoBack ? (
           <button
             onClick={handleBack}
-            className="p-2 -ml-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            className="p-2 -ml-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 transition-colors"
           >
-            <ChevronLeft className="w-5 h-5 text-gray-700" />
+            <ChevronLeft className="w-5 h-5 text-gray-700 dark:text-gray-300" />
           </button>
         ) : (
           <div className="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center">
@@ -153,9 +154,9 @@ export default function TopBar() {
 
         {/* Título */}
         <div className="flex-1 min-w-0">
-          <h1 className="text-base font-semibold text-gray-900 truncate">{title}</h1>
+          <h1 className="text-base font-semibold text-gray-900 dark:text-white truncate">{title}</h1>
           {isRoot && profile && (
-            <p className="text-xs text-gray-500 truncate leading-tight">
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate leading-tight">
               {profile.nombre} {profile.apellidos} · {profile.matricula}
             </p>
           )}
@@ -165,10 +166,10 @@ export default function TopBar() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => navigate('/cambios')}
-            className="relative p-2 rounded-xl hover:bg-gray-100 active:bg-gray-200 transition-colors"
+            className="relative p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 transition-colors"
             title={pendingCount > 0 ? `${pendingCount} solicitud${pendingCount > 1 ? 'es' : ''} pendiente${pendingCount > 1 ? 's' : ''}` : 'Cambios de turno'}
           >
-            <Bell className="w-5 h-5 text-gray-700" />
+            <Bell className="w-5 h-5 text-gray-700 dark:text-gray-300" />
             {pendingCount > 0 && (
               <span className="absolute top-1 right-1 w-4 h-4 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                 {pendingCount > 9 ? '9+' : pendingCount}
@@ -179,10 +180,13 @@ export default function TopBar() {
           {profile && (
             <button
               onClick={() => navigate('/perfil')}
-              className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center
-                text-red-700 font-bold text-xs ml-1 hover:bg-red-200 transition-colors"
+              className="w-8 h-8 rounded-full overflow-hidden bg-red-100 flex items-center justify-center
+                text-red-700 font-bold text-xs ml-1 hover:opacity-90 transition-opacity"
             >
-              {getInitials(profile.nombre, profile.apellidos)}
+              {profile.avatar_url
+                ? <img src={profile.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+                : getInitials(profile.nombre, profile.apellidos)
+              }
             </button>
           )}
         </div>

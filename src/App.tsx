@@ -7,6 +7,7 @@ import Layout from '@/components/layout/Layout'
 import LoginPage from '@/pages/LoginPage'
 import CalendarPage from '@/pages/CalendarPage'
 import ColleaguesPage from '@/pages/ColleaguesPage'
+import SearchPage from '@/pages/SearchPage'
 import SwapsPage from '@/pages/SwapsPage'
 import AdminPage from '@/pages/admin/AdminPage'
 import UploadPage from '@/pages/admin/UploadPage'
@@ -190,6 +191,7 @@ function AppRoutes() {
         {/* Layout maneja CalendarPage y DayDetailPage internamente (siempre montados) */}
         <Route index element={null} />
         <Route path="dia/:dateStr" element={null} />
+        <Route path="buscar" element={<SearchPage />} />
         <Route path="companeros" element={<ColleaguesPage />} />
         <Route path="companeros/:maquinistaId" element={<CalendarPage />} />
         <Route path="cambios" element={<SwapsPage />} />

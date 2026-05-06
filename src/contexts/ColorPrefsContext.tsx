@@ -16,6 +16,19 @@ const ColorPrefsContext = createContext<ColorPrefsContextValue>({
   resetPrefs: async () => {},
 })
 
+// ── Aplicar clase dark en <html> ─────────────────────────────────────────────
+
+function applyTheme(theme: ColorPrefs['theme']) {
+  const root   = document.documentElement
+  const isDark =
+    theme === 'dark' ||
+    (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+
+  root.classList.toggle('dark', isDark)
+}
+
+// ── Provider ─────────────────────────────────────────────────────────────────
+
 export function ColorPrefsProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth()
   const [prefs, setPrefs] = useState<ColorPrefs>(DEFAULT_COLOR_PREFS)
@@ -30,13 +43,26 @@ export function ColorPrefsProvider({ children }: { children: React.ReactNode }) 
       .eq('id', profile.id)
       .single()
       .then(({ data }) => {
-        setPrefs(mergePrefs(data?.color_prefs as Partial<ColorPrefs> | null))
+        const merged = mergePrefs(data?.color_prefs as Partial<ColorPrefs> | null)
+        setPrefs(merged)
+        applyTheme(merged.theme)
       })
   }, [profile?.id])
+
+  // Escuchar cambios en prefers-color-scheme cuando el tema es 'system'
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    function onChange() {
+      if (prefs.theme === 'system') applyTheme('system')
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [prefs.theme])
 
   const savePrefs = useCallback(async (next: ColorPrefs) => {
     if (!profile) return
     setPrefs(next)   // optimistic update
+    applyTheme(next.theme)
     await supabase
       .from('profiles')
       .update({ color_prefs: next })
