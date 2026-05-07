@@ -737,16 +737,27 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
     if (items.length === 0) continue
 
-    // ── 2. Agrupar por fila (Y redondeado a múltiplos de ROW_TOL) ─────────────
-    const rowMap = new Map<number, { x: number; text: string; width: number }[]>()
+    // ── Detectar si el texto está rotado ────────────────────────────────────────
+    const trenMatches = items.filter(it => TREN_SCAN_RE.test(it.text))
+    const xSet = new Set(trenMatches.map(it => Math.round(it.x)))
+    const yRoundedSet = new Set(trenMatches.map(it => Math.round(it.y / ROW_TOL) * ROW_TOL))
+    const isRotated = trenMatches.length > 0 && yRoundedSet.size > xSet.size && trenMatches.every(it => it.width < 10)
+
+    console.log(`[LH820] Pág ${pageNum}: isRotated=${isRotated}, trenMatches=${trenMatches.length}`)
+
+    // ── 2. Agrupar por fila (Y o X redondeado según rotación) ─────────────────
+    const rowKey = (it: typeof items[0]) => isRotated ? Math.round(it.x / ROW_TOL) * ROW_TOL : Math.round(it.y / ROW_TOL) * ROW_TOL
+    const colKey = (it: typeof items[0]) => isRotated ? it.y : it.x
+
+    const rowMap = new Map<number, { col: number; text: string; width: number }[]>()
     for (const it of items) {
-      const ry = Math.round(it.y / ROW_TOL) * ROW_TOL
-      if (!rowMap.has(ry)) rowMap.set(ry, [])
-      rowMap.get(ry)!.push({ x: it.x, text: it.text, width: it.width })
+      const rk = rowKey(it)
+      if (!rowMap.has(rk)) rowMap.set(rk, [])
+      rowMap.get(rk)!.push({ col: colKey(it), text: it.text, width: it.width })
     }
     const rows = Array.from(rowMap.entries())
-      .sort((a, b) => b[0] - a[0])
-      .map(([, cells]) => cells.sort((a, b) => a.x - b.x))
+      .sort((a, b) => a[0] - b[0])
+      .map(([, cells]) => cells.sort((a, b) => a.col - b.col))
 
     // ── 3. Buscar TODOS los números de tren en la página ──────────────────────
     //
@@ -755,7 +766,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     // primera fila → solo capturaba el primer tren. Ahora recorremos TODAS las filas
     // y acumulamos todos los trenes encontrados en filas sin horas (= cabeceras).
     const headerRowSet = new Set<number>()
-    const allTrenCols:  { num: string; x: number }[] = []
+    const allTrenCols: { num: string; col: number }[] = []
 
     for (let ri = 0; ri < rows.length; ri++) {
       const rowHasTimes = rows[ri].some(c => HORA_SCAN_RE.test(c.text))
@@ -767,12 +778,12 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
         headerRowSet.add(ri)
         if (matches.length === 1 || c.width <= 0) {
-          for (const m of matches) allTrenCols.push({ num: m[1], x: c.x })
+          for (const m of matches) allTrenCols.push({ num: m[1], col: c.col })
         } else {
           const textLen = c.text.length
           for (const m of matches) {
             const frac = (m.index ?? 0) / textLen
-            allTrenCols.push({ num: m[1], x: c.x + frac * c.width })
+            allTrenCols.push({ num: m[1], col: c.col + frac * c.width })
           }
         }
       }
@@ -802,20 +813,20 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
 
     // ── 4. Detectar clústeres de columnas Hora ────────────────────────────────
-    const allTimeXs: number[] = []
+    const allTimeCols: number[] = []
     for (let ri = 0; ri < rows.length; ri++) {
       if (headerRowSet.has(ri)) continue
       for (const c of rows[ri]) {
-        if (HORA_SCAN_RE.test(c.text)) allTimeXs.push(c.x)
+        if (HORA_SCAN_RE.test(c.text)) allTimeCols.push(c.col)
       }
     }
-    allTimeXs.sort((a, b) => a - b)
+    allTimeCols.sort((a, b) => a - b)
 
     const rawClusters: number[] = []
-    for (const x of allTimeXs) {
+    for (const col of allTimeCols) {
       const last = rawClusters[rawClusters.length - 1] ?? -Infinity
-      if (x - last > 30) rawClusters.push(x)
-      else rawClusters[rawClusters.length - 1] = (last + x) / 2
+      if (col - last > 30) rawClusters.push(col)
+      else rawClusters[rawClusters.length - 1] = (last + col) / 2
     }
 
     // ── 5. Separar clústeres en IDA (tabla izquierda) y VUELTA (tabla derecha) ─
@@ -857,17 +868,17 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       idaClusters = filtered.length >= N ? filtered.slice(0, N) : rawClusters.slice(0, N)
     }
 
-    console.log(`[LH820] Pág ${pageNum}: IDA  [${idaClusters.map(x=>x.toFixed(0)).join(',')}]`)
-    console.log(`[LH820] Pág ${pageNum}: VUELTA [${vueltaClusters.map(x=>x.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum}: IDA  [${idaClusters.map(c=>c.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum}: VUELTA [${vueltaClusters.map(c=>c.toFixed(0)).join(',')}]`)
 
     // ── 6. Construir colBounds para IDA y VUELTA ──────────────────────────────
-    type Bound = { num: string; xMin: number; xMax: number; sentido: 'IDA' | 'VUELTA' }
+    type Bound = { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }
 
     function makeBounds(clusters: number[], nums: string[], sentido: 'IDA' | 'VUELTA'): Bound[] {
-      return clusters.map((cx, i) => {
-        const prev = i > 0 ? clusters[i - 1] : cx - 300
-        const next = i < clusters.length - 1 ? clusters[i + 1] : cx + 300
-        return { num: nums[i] ?? '', xMin: (prev + cx) / 2, xMax: (cx + next) / 2, sentido }
+      return clusters.map((cc, i) => {
+        const prev = i > 0 ? clusters[i - 1] : cc - 300
+        const next = i < clusters.length - 1 ? clusters[i + 1] : cc + 300
+        return { num: nums[i] ?? '', colMin: (prev + cc) / 2, colMax: (cc + next) / 2, sentido }
       }).filter(b => b.num !== '')
     }
 
@@ -882,8 +893,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
 
     // Frontera izquierda de la zona de trenes (para identificar columna de estación)
-    const firstTrainX = Math.min(...allBounds.map(b => b.xMin))
-    const minTrenX    = firstTrainX   // items con x < minTrenX → zona izquierda (estación)
+    const firstTrainCol = Math.min(...allBounds.map(b => b.colMin))
+    const minTrenCol    = firstTrainCol   // items con col < minTrenCol → zona izquierda (estación)
 
     // ── 7. Procesar filas de datos ─────────────────────────────────────────────
     for (let ri = 0; ri < rows.length; ri++) {
@@ -891,7 +902,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       const row = rows[ri]
 
       // Items a la izquierda de la primera columna de trenes
-      const stItems = row.filter(c => c.x < minTrenX - 5)
+      const stItems = row.filter(c => c.col < minTrenCol - 5)
       if (stItems.length === 0) continue
 
       // Separar: números decimales → sit_km, enteros → vmax, texto → estación
@@ -916,12 +927,12 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
       const apd = estacion.toUpperCase().includes('APD')
 
-      // Para cada columna (IDA o VUELTA), buscar la hora dentro de su rango X
-      for (const { num, xMin, xMax, sentido } of allBounds) {
+      // Para cada columna (IDA o VUELTA), buscar la hora dentro de su rango Col
+      for (const { num, colMin, colMax, sentido } of allBounds) {
         const tren = trenesMap.get(num)
         if (!tren) continue
 
-        const trenItems = row.filter(c => c.x >= xMin && c.x <= xMax)
+        const trenItems = row.filter(c => c.col >= colMin && c.col <= colMax)
         let hora:     string | null = null
         let comercial = false
 
