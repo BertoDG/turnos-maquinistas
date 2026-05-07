@@ -790,8 +790,10 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     console.warn('[LH820] Sin resultado. Muestra pág 1:')
     const page1 = await pdf.getPage(1)
     const tc = await page1.getTextContent()
-    ;(tc.items as { str?: string; transform?: number[] }[])
-      .filter(i => i.str?.trim()).slice(0, 40)
+    const items = tc.items as { str?: string; transform?: number[] }[]
+    items
+      .filter(i => i.str?.trim())
+      .slice(0, 40)
       .forEach(i => console.warn(`  x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`))
   }
   return resultado
