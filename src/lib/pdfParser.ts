@@ -843,19 +843,38 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       }
     }
 
-    // 3. Separar "zona estación" de "zona trenes".
-    //    Buscamos el primer salto > 150px entre clústeres: ese gap marca la frontera
-    //    entre la columna de estaciones (x pequeño) y las columnas de horario de trenes.
-    //    (Entre columnas de trenes adyacentes el salto suele ser 30-60px;
-    //     entre la columna de estación y el primer tren suele ser > 150px.)
-    let trainZoneStart = 0
-    for (let ci = 1; ci < rawClusters.length; ci++) {
-      if (rawClusters[ci] - rawClusters[ci - 1] > 150) {
-        trainZoneStart = ci
-        break
+    // 3. Seleccionar los clústeres correctos para las columnas de trenes.
+    //
+    //    Estrategia:
+    //    a) Si tenemos EXACTAMENTE tantos clústeres como trenes → usarlos todos
+    //       directamente (caso más común: 1 tren / 2 trenes / 6 trenes con layout
+    //       de dos tablas donde el gap entre tablas no es ruido, son datos).
+    //    b) Si tenemos MÁS clústeres que trenes → intentar eliminar los de la
+    //       "zona de estación" (x pequeño antes del primer gran salto).
+    //       Si tras filtrar aún tenemos suficientes → bien.
+    //       Si no → usar todos los raw de todos modos (mejor que el fallback).
+    //    c) Si tenemos MENOS clústeres que trenes → fallback a posiciones de cabecera.
+
+    let trainClusters: number[]
+
+    if (rawClusters.length === sortedCols.length) {
+      // Caso (a): coincidencia exacta — usarlos todos sin filtrar
+      trainClusters = rawClusters
+    } else if (rawClusters.length > sortedCols.length) {
+      // Caso (b): sobran clústeres, intentar eliminar zona de estación
+      let trainZoneStart = 0
+      for (let ci = 1; ci < rawClusters.length; ci++) {
+        if (rawClusters[ci] - rawClusters[ci - 1] > 150) {
+          trainZoneStart = ci
+          break
+        }
       }
+      const filtered = rawClusters.slice(trainZoneStart)
+      trainClusters = filtered.length >= sortedCols.length ? filtered : rawClusters
+    } else {
+      // Caso (c): faltan clústeres → usar array vacío para activar el fallback
+      trainClusters = []
     }
-    const trainClusters = rawClusters.slice(trainZoneStart)
 
     // 4. Asignar posiciones reales a sortedCols si tenemos suficientes clústeres
     let usedClusters = false
@@ -867,7 +886,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     } else {
       // Fallback: usar las posiciones de cabecera (funciona si no hay offset)
       console.warn(
-        `[LH820] Pág ${pageNum}: solo ${trainClusters.length} clústeres para ${sortedCols.length} trenes.` +
+        `[LH820] Pág ${pageNum}: solo ${rawClusters.length} clústeres para ${sortedCols.length} trenes.` +
         ` Clústeres raw: [${rawClusters.map(x => x.toFixed(0)).join(', ')}].` +
         ` Usando posiciones de cabecera.`
       )
@@ -885,11 +904,10 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     })
 
     // 6. Frontera izquierda de la zona de trenes (para filtrar columna de estación).
-    //    Cuando usamos clústeres, la posición ya es la columna Hora real;
-    //    restamos un margen para incluir los bullets C que están a su izquierda.
-    const minTrenX = usedClusters
-      ? sortedCols[0].x - 40
-      : sortedCols[0].x
+    //    Usamos la posición del primer clúster/columna menos un pequeño margen para
+    //    incluir los bullets C que están justo a su izquierda, pero sin que el umbral
+    //    caiga por debajo de los nombres de estación (que pueden estar en x≈20-50).
+    const minTrenX = sortedCols[0].x - 5
 
     console.log(`[LH820] Pág ${pageNum} límites de columnas:`,
       colBounds.map(b => `${b.num}=[${b.xMin.toFixed(0)},${b.xMax.toFixed(0)}]`).join(' '))
