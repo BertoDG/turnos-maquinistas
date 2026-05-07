@@ -721,7 +721,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
   // VMax: entero sin punto, en rango operativo razonable
   const VMAX_RE     = /^\d{2,3}$/
   const COMERCIAL   = new Set(['●', '•', '·', '|', 'l', 'o', '○'])
-  const ROW_TOL     = 4
+  const ROW_TOL     = 3  // Tolerancia para agrupar palabras en la misma fila
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page        = await pdf.getPage(pageNum)
@@ -737,54 +737,33 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
     if (items.length === 0) continue
 
-    // ── Detectar si el texto está rotado ────────────────────────────────────────
-    const trenMatches = items.filter(it => TREN_SCAN_RE.test(it.text))
-    const xSet = new Set(trenMatches.map(it => Math.round(it.x)))
-    const yRoundedSet = new Set(trenMatches.map(it => Math.round(it.y / ROW_TOL) * ROW_TOL))
-    const isRotated = trenMatches.length > 0 && yRoundedSet.size > xSet.size && trenMatches.every(it => it.width < 10)
-
-    console.log(`[LH820] Pág ${pageNum}: isRotated=${isRotated}, trenMatches=${trenMatches.length}`)
-
-    // ── 2. Agrupar por fila (Y o X redondeado según rotación) ─────────────────
-    const rowKey = (it: typeof items[0]) => isRotated ? Math.round(it.x / ROW_TOL) * ROW_TOL : Math.round(it.y / ROW_TOL) * ROW_TOL
-    const colKey = (it: typeof items[0]) => isRotated ? it.y : it.x
-
-    const rowMap = new Map<number, { col: number; text: string; width: number }[]>()
+    // ── 2. Agrupar por filas con tolerancia en Y ──────────────────────────────
+    items.sort((a, b) => a.y - b.y)
+    const rows: { col: number; text: string; width: number }[][] = []
+    let currentRow: typeof items = []
     for (const it of items) {
-      const rk = rowKey(it)
-      if (!rowMap.has(rk)) rowMap.set(rk, [])
-      rowMap.get(rk)!.push({ col: colKey(it), text: it.text, width: it.width })
+      if (currentRow.length === 0 || Math.abs(it.y - currentRow[0].y) <= ROW_TOL) {
+        currentRow.push(it)
+      } else {
+        rows.push(currentRow.sort((a, b) => a.x - b.x).map(it => ({ col: it.x, text: it.text, width: it.width })))
+        currentRow = [it]
+      }
     }
-    const rows = Array.from(rowMap.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([, cells]) => cells.sort((a, b) => a.col - b.col))
+    if (currentRow.length > 0) {
+      rows.push(currentRow.sort((a, b) => a.x - b.x).map(it => ({ col: it.x, text: it.text, width: it.width })))
+    }
 
     // ── 3. Buscar TODOS los números de tren en la página ──────────────────────
-    //
-    // PROBLEMA CLAVE: en páginas con texto rotado 90°, cada número de tren está
-    // en su propia "fila" (Y diferente). El código anterior rompía al encontrar la
-    // primera fila → solo capturaba el primer tren. Ahora recorremos TODAS las filas
-    // y acumulamos todos los trenes encontrados en filas sin horas (= cabeceras).
     const headerRowSet = new Set<number>()
     const allTrenCols: { num: string; col: number }[] = []
 
     for (let ri = 0; ri < rows.length; ri++) {
-      const rowHasTimes = rows[ri].some(c => HORA_SCAN_RE.test(c.text))
-      if (rowHasTimes) continue   // filas con horas son filas de datos, no cabecera
-
-      for (const c of rows[ri]) {
-        const matches = [...c.text.matchAll(TREN_SCAN_RE)]
-        if (matches.length === 0) continue
-
+      const row = rows[ri]
+      const trenCells = row.filter(c => TREN_SCAN_RE.test(c.text))
+      if (trenCells.length > 0) {
         headerRowSet.add(ri)
-        if (matches.length === 1 || c.width <= 0) {
-          for (const m of matches) allTrenCols.push({ num: m[1], col: c.col })
-        } else {
-          const textLen = c.text.length
-          for (const m of matches) {
-            const frac = (m.index ?? 0) / textLen
-            allTrenCols.push({ num: m[1], col: c.col + frac * c.width })
-          }
+        for (const c of trenCells) {
+          allTrenCols.push({ num: c.text, col: c.col })
         }
       }
     }
@@ -795,10 +774,13 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
 
     // Deduplicar manteniendo orden de primera aparición
-    const seenNums  = new Set<string>()
+    const seenNums = new Set<string>()
     const uniqueNums: string[] = []
     for (const { num } of allTrenCols) {
-      if (!seenNums.has(num)) { seenNums.add(num); uniqueNums.push(num) }
+      if (!seenNums.has(num)) {
+        seenNums.add(num)
+        uniqueNums.push(num)
+      }
     }
 
     console.log(`[LH820] Pág ${pageNum}: trenes → ${uniqueNums.join(', ')}`)
@@ -830,36 +812,25 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
 
     // ── 5. Separar clústeres en IDA (tabla izquierda) y VUELTA (tabla derecha) ─
-    //
-    // Cada página tiene DOS tablas separadas por un hueco grande (>150 px).
-    // Identificamos el mayor salto entre clústeres consecutivos y lo usamos
-    // como frontera IDA/VUELTA. Asignamos los N trenes únicos a cada mitad.
-
     const N = uniqueNums.length
 
     let splitIdx = -1
-    let maxGap   = 0
+    let maxGap = 0
     for (let ci = 1; ci < rawClusters.length; ci++) {
       const gap = rawClusters[ci] - rawClusters[ci - 1]
       if (gap > maxGap) { maxGap = gap; splitIdx = ci }
     }
 
-    let idaClusters:    number[] = []
+    let idaClusters: number[] = []
     let vueltaClusters: number[] = []
 
     if (maxGap > 150 && splitIdx > 0) {
-      // Dos tablas detectadas — recortar a N clústeres por tabla
-      const left  = rawClusters.slice(0, splitIdx)
+      const left = rawClusters.slice(0, splitIdx)
       const right = rawClusters.slice(splitIdx)
 
-      // Zona izquierda puede tener clústeres extra de la columna de estaciones;
-      // nos quedamos con los N ÚLTIMOS (más a la derecha = columnas Hora reales).
-      idaClusters    = left.length  > N ? left.slice(left.length - N)  : left
-      // Zona derecha: nos quedamos con los N PRIMEROS
+      idaClusters = left.length > N ? left.slice(left.length - N) : left
       vueltaClusters = right.length > N ? right.slice(0, N) : right
     } else {
-      // Una sola tabla (o no se pudo separar): tratar como IDA
-      // Eliminar clústeres de la zona de estaciones (x muy pequeño)
       let trainStart = 0
       for (let ci = 1; ci < rawClusters.length; ci++) {
         if (rawClusters[ci] - rawClusters[ci - 1] > 100) { trainStart = ci; break }
@@ -868,8 +839,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       idaClusters = filtered.length >= N ? filtered.slice(0, N) : rawClusters.slice(0, N)
     }
 
-    console.log(`[LH820] Pág ${pageNum}: IDA  [${idaClusters.map(c=>c.toFixed(0)).join(',')}]`)
-    console.log(`[LH820] Pág ${pageNum}: VUELTA [${vueltaClusters.map(c=>c.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum}: IDA [${idaClusters.map(c => c.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum}: VUELTA [${vueltaClusters.map(c => c.toFixed(0)).join(',')}]`)
 
     // ── 6. Construir colBounds para IDA y VUELTA ──────────────────────────────
     type Bound = { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }
@@ -883,7 +854,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
 
     const allBounds: Bound[] = [
-      ...makeBounds(idaClusters,    uniqueNums, 'IDA'),
+      ...makeBounds(idaClusters, uniqueNums, 'IDA'),
       ...makeBounds(vueltaClusters, uniqueNums, 'VUELTA'),
     ]
 
@@ -892,9 +863,9 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       continue
     }
 
-    // Frontera izquierda de la zona de trenes (para identificar columna de estación)
+    // Frontera izquierda de la zona de trenes
     const firstTrainCol = Math.min(...allBounds.map(b => b.colMin))
-    const minTrenCol    = firstTrainCol   // items con col < minTrenCol → zona izquierda (estación)
+    const minTrenCol = firstTrainCol
 
     // ── 7. Procesar filas de datos ─────────────────────────────────────────────
     for (let ri = 0; ri < rows.length; ri++) {
@@ -907,8 +878,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
       // Separar: números decimales → sit_km, enteros → vmax, texto → estación
       let estacion = ''
-      let sit_km:  number | null = null
-      let vmax:    number | null = null
+      let sit_km: number | null = null
+      let vmax: number | null = null
 
       for (const c of stItems) {
         if (SITKM_RE.test(c.text)) {
@@ -922,7 +893,6 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       }
 
       estacion = estacion.trim()
-      // Descartar filas sin estación real (solo eran marcas de VMax/Km sin parada)
       if (!estacion || estacion.length < 2) continue
 
       const apd = estacion.toUpperCase().includes('APD')
@@ -933,7 +903,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
         if (!tren) continue
 
         const trenItems = row.filter(c => c.col >= colMin && c.col <= colMax)
-        let hora:     string | null = null
+        let hora: string | null = null
         let comercial = false
 
         for (const c of trenItems) {
@@ -950,7 +920,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
         if (lastSameSentido && lastSameSentido.hora === hora && lastSameSentido.estacion === estacion) continue
 
         tren.paradas.push({
-          orden:    paradas.length,
+          orden: paradas.length,
           estacion,
           hora,
           comercial,
@@ -963,8 +933,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
   }
 
-  const todos      = Array.from(trenesMap.values())
-  const resultado  = todos.filter(t => t.paradas.length > 0)
+  const todos = Array.from(trenesMap.values())
+  const resultado = todos.filter(t => t.paradas.length > 0)
   const sinParadas = todos.filter(t => t.paradas.length === 0).map(t => t.numero)
 
   console.log(`[LH820] Trenes detectados: ${todos.length}`)
@@ -976,7 +946,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
   if (resultado.length === 0) {
     console.warn('[LH820] Sin resultado. Muestra pág 1:')
     const page1 = await pdf.getPage(1)
-    const tc    = await page1.getTextContent()
+    const tc = await page1.getTextContent()
     ;(tc.items as { str?: string; transform?: number[] }[])
       .filter(i => i.str?.trim()).slice(0, 40)
       .forEach(i => console.warn(`  x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`))
