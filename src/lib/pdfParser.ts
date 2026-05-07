@@ -806,12 +806,74 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       }
     }
 
-    // ── Calcular límites X de cada tren por puntos medios ─────────────────────
-    // Cada tren ocupa desde el punto medio con el tren anterior hasta el punto
-    // medio con el tren siguiente. Esto es mucho más robusto que una tolerancia
-    // fija, ya que el número de tren en la cabecera se centra sobre las
-    // sub-columnas C, Hora, T y puede estar lejos de los tiempos reales.
+    // ── Determinar posiciones reales de columnas Hora ─────────────────────────
+    // El número de tren en la cabecera aparece sobre las sub-columnas C, Hora, T,
+    // pero puede estar desplazado respecto a la columna Hora donde están los tiempos.
+    // Además, cada página tiene DOS tablas (ida y vuelta) con los mismos trenes,
+    // así que la misma X de cabecera puede coincidir para varios trenes.
+    //
+    // Estrategia: escanear las primeras filas de datos para detectar las posiciones
+    // X reales de los ítems con hora, clusterizarlas y asignarlas a cada tren
+    // (de izquierda a derecha). Esto funciona con cualquier estructura de la cabecera.
+
     const sortedCols = [...trenCols].sort((a, b) => a.x - b.x)
+
+    // 1. Recoger todos los X de ítems con hora en TODAS las filas de la página.
+    //    Necesario porque en algunas páginas los números de tren están como texto
+    //    rotado 90° (x≈22 en el margen), y los datos de horario aparecen en filas
+    //    que pueden estar ANTES del headerIdx en el orden por Y decreciente.
+    const allTimeXs: number[] = []
+    for (let ri = 0; ri < rows.length; ri++) {
+      if (ri === headerIdx) continue  // saltar la fila de cabecera
+      for (const c of rows[ri]) {
+        if (HORA_SCAN_RE.test(c.text)) allTimeXs.push(c.x)
+      }
+    }
+    allTimeXs.sort((a, b) => a - b)
+
+    // 2. Clusterizar: X's a ≤ 30px de distancia pertenecen al mismo clúster
+    const rawClusters: number[] = []
+    for (const x of allTimeXs) {
+      const last = rawClusters[rawClusters.length - 1] ?? -Infinity
+      if (x - last > 30) {
+        rawClusters.push(x)
+      } else {
+        // Media móvil para aproximar el centro del clúster
+        rawClusters[rawClusters.length - 1] = (last + x) / 2
+      }
+    }
+
+    // 3. Separar "zona estación" de "zona trenes".
+    //    Buscamos el primer salto > 150px entre clústeres: ese gap marca la frontera
+    //    entre la columna de estaciones (x pequeño) y las columnas de horario de trenes.
+    //    (Entre columnas de trenes adyacentes el salto suele ser 30-60px;
+    //     entre la columna de estación y el primer tren suele ser > 150px.)
+    let trainZoneStart = 0
+    for (let ci = 1; ci < rawClusters.length; ci++) {
+      if (rawClusters[ci] - rawClusters[ci - 1] > 150) {
+        trainZoneStart = ci
+        break
+      }
+    }
+    const trainClusters = rawClusters.slice(trainZoneStart)
+
+    // 4. Asignar posiciones reales a sortedCols si tenemos suficientes clústeres
+    let usedClusters = false
+    if (trainClusters.length >= sortedCols.length) {
+      for (let i = 0; i < sortedCols.length; i++) sortedCols[i].x = trainClusters[i]
+      usedClusters = true
+      console.log(`[LH820] Pág ${pageNum} posiciones desde clústeres:`,
+        sortedCols.map(c => `${c.num}@x=${c.x.toFixed(0)}`).join(' '))
+    } else {
+      // Fallback: usar las posiciones de cabecera (funciona si no hay offset)
+      console.warn(
+        `[LH820] Pág ${pageNum}: solo ${trainClusters.length} clústeres para ${sortedCols.length} trenes.` +
+        ` Clústeres raw: [${rawClusters.map(x => x.toFixed(0)).join(', ')}].` +
+        ` Usando posiciones de cabecera.`
+      )
+    }
+
+    // 5. Calcular límites exclusivos por midpoints entre posiciones adyacentes
     const colBounds = sortedCols.map((col, i) => {
       const prevX = i > 0 ? sortedCols[i - 1].x : col.x - 300
       const nextX = i < sortedCols.length - 1 ? sortedCols[i + 1].x : col.x + 300
@@ -822,13 +884,21 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       }
     })
 
-    const minTrenX = sortedCols[0].x
+    // 6. Frontera izquierda de la zona de trenes (para filtrar columna de estación).
+    //    Cuando usamos clústeres, la posición ya es la columna Hora real;
+    //    restamos un margen para incluir los bullets C que están a su izquierda.
+    const minTrenX = usedClusters
+      ? sortedCols[0].x - 40
+      : sortedCols[0].x
 
     console.log(`[LH820] Pág ${pageNum} límites de columnas:`,
       colBounds.map(b => `${b.num}=[${b.xMin.toFixed(0)},${b.xMax.toFixed(0)}]`).join(' '))
 
-    // ── Procesar filas de datos (debajo del encabezado) ────────────────────────
-    for (let ri = headerIdx + 1; ri < rows.length; ri++) {
+    // ── Procesar filas de datos ────────────────────────────────────────────────
+    // Procesamos TODAS las filas excepto la de cabecera (que contiene los números
+    // de tren, ya sean horizontales o rotados verticalmente).
+    for (let ri = 0; ri < rows.length; ri++) {
+      if (ri === headerIdx) continue   // saltar la fila de cabecera
       const row = rows[ri]
 
       // Items a la izquierda de la primera columna de trenes → estación
