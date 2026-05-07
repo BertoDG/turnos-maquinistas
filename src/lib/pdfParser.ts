@@ -699,27 +699,32 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
   const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
   const pdf = await loadingTask.promise
 
+  console.log(`[LH820] PDF abierto: ${pdf.numPages} páginas`)
+
   // Mapa numero→tren (acumula paradas de múltiples páginas)
   const trenesMap = new Map<string, LH820Tren>()
 
-  const TREN_RE    = /^7\d{4}$/
-  const HORA_RE    = /^(\d{1,2})[.:,](\d{2})$/
-  const COMERCIAL  = new Set(['●', '•', '·', '|', 'l', 'o', '○'])
-  // Tolerancia en puntos PDF para agrupar items en la misma fila
-  const ROW_TOL  = 3
-  // Tolerancia horizontal para asociar un item a la columna de un tren
-  const COL_TOL  = 55
+  // Números de tren: 5 dígitos comenzando por 7 (búsqueda en cualquier texto del item)
+  const TREN_SCAN_RE = /\b(7\d{4})\b/g
+  // Hora: HH.MM, HH:MM, HH,MM (dentro del texto del item)
+  const HORA_SCAN_RE = /\b(\d{1,2})[.:](\d{2})\b/
+  const COMERCIAL    = new Set(['●', '•', '·', '|', 'l', 'o', '○'])
+
+  // Tolerancia Y para agrupar items de la misma fila visual (puntos PDF)
+  const ROW_TOL = 4
+  // Tolerancia X para asociar un item a una columna de tren
+  const COL_TOL = 60
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page       = await pdf.getPage(pageNum)
+    const page        = await pdf.getPage(pageNum)
     const textContent = await page.getTextContent()
 
     // Extraer items con posición (x, y, text)
     const items: { x: number; y: number; text: string }[] = []
     for (const raw of textContent.items) {
-      const item = raw as { str: string; transform: number[] }
+      const item = raw as { str?: string; transform?: number[] }
       const text = item.str?.trim()
-      if (!text) continue
+      if (!text || !item.transform) continue
       items.push({ x: item.transform[4], y: item.transform[5], text })
     }
     if (items.length === 0) continue
@@ -732,24 +737,37 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       rowMap.get(ry)!.push({ x: it.x, text: it.text })
     }
 
-    // Ordenar filas de arriba a abajo (Y mayor = más arriba en espacio PDF)
+    // Ordenar filas de arriba a abajo (Y mayor = más arriba en PDF)
     const rows = Array.from(rowMap.entries())
       .sort((a, b) => b[0] - a[0])
       .map(([, cells]) => cells.sort((a, b) => a.x - b.x))
 
-    // Buscar fila de cabecera (contiene al menos un 7XXXX)
+    // ── Buscar fila de cabecera con números de tren 7XXXX ──────────────────────
+    // Buscamos en CADA texto del item, no solo en items exactos.
+    // Esto maneja casos donde pdf.js agrupa varios tokens en un solo item.
     let headerIdx = -1
     let trenCols: { num: string; x: number }[] = []
 
     for (let ri = 0; ri < rows.length; ri++) {
-      const matches = rows[ri].filter(c => TREN_RE.test(c.text))
-      if (matches.length >= 1) {
+      const found: { num: string; x: number }[] = []
+      for (const c of rows[ri]) {
+        for (const m of c.text.matchAll(TREN_SCAN_RE)) {
+          found.push({ num: m[1], x: c.x })
+        }
+      }
+      if (found.length >= 1) {
         headerIdx = ri
-        trenCols  = matches.map(c => ({ num: c.text, x: c.x }))
+        trenCols  = found
         break
       }
     }
-    if (headerIdx === -1) continue
+
+    if (headerIdx === -1) {
+      console.log(`[LH820] Pág ${pageNum}: sin cabecera de trenes`)
+      continue
+    }
+
+    console.log(`[LH820] Pág ${pageNum}: trenes ${trenCols.map(t => t.num).join(', ')}`)
 
     // Registrar trenes nuevos
     for (const { num } of trenCols) {
@@ -767,31 +785,33 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
     const minTrenX = Math.min(...trenCols.map(t => t.x))
 
-    // Procesar filas de datos (debajo del encabezado)
+    // ── Procesar filas de datos (debajo del encabezado) ────────────────────────
     for (let ri = headerIdx + 1; ri < rows.length; ri++) {
       const row = rows[ri]
 
-      // Items a la izquierda de las columnas de trenes → nombre de estación
+      // Items claramente a la izquierda de las columnas de trenes → estación
       const stItems = row.filter(c => c.x < minTrenX - 5)
       if (stItems.length === 0) continue
 
       const estacion = stItems.map(c => c.text).join(' ').trim()
-      // Descartar filas que no parezcan estación (números puros, etc.)
-      if (!estacion || estacion.length < 2 || /^\d+([.,]\d+)?$/.test(estacion)) continue
+      // Descartar filas vacías, puramente numéricas o muy cortas
+      if (!estacion || estacion.length < 2 || /^\d[\d\s,.]*$/.test(estacion)) continue
 
-      const apd = estacion.includes('APD')
+      const apd = estacion.toUpperCase().includes('APD')
 
-      // Para cada columna de tren, buscar su hora en esta fila
+      // Para cada tren, buscar su hora en esta fila
       for (const { num, x: tx } of trenCols) {
-        const tren       = trenesMap.get(num)!
-        const trenItems  = row.filter(c => Math.abs(c.x - tx) < COL_TOL)
+        const tren      = trenesMap.get(num)!
+        // Items dentro de la columna de este tren (±COL_TOL)
+        const trenItems = row.filter(c => Math.abs(c.x - tx) < COL_TOL)
 
-        let hora:      string | null = null
-        let comercial  = false
+        let hora:     string | null = null
+        let comercial = false
 
         for (const c of trenItems) {
           if (COMERCIAL.has(c.text)) { comercial = true; continue }
-          const m = c.text.match(HORA_RE)
+          // Buscar hora dentro del texto (no solo match exacto)
+          const m = c.text.match(HORA_SCAN_RE)
           if (m) hora = `${m[1].padStart(2, '0')}:${m[2]}`
         }
 
@@ -802,7 +822,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
         if (last && last.hora === hora && last.estacion === estacion) continue
 
         tren.paradas.push({
-          orden:     tren.paradas.length,
+          orden:    tren.paradas.length,
           estacion,
           hora,
           comercial,
@@ -812,7 +832,18 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
   }
 
-  return Array.from(trenesMap.values()).filter(t => t.paradas.length > 0)
+  const resultado = Array.from(trenesMap.values()).filter(t => t.paradas.length > 0)
+  console.log(`[LH820] Resultado: ${resultado.length} trenes con paradas`)
+  if (resultado.length === 0) {
+    // Mostrar muestra de texto extraído para diagnóstico
+    console.warn('[LH820] No se encontraron trenes. Muestra de items extraídos de pág 1:')
+    const page1 = await pdf.getPage(1)
+    const tc    = await page1.getTextContent()
+    const sample = (tc.items as { str?: string }[])
+      .map(i => i.str?.trim()).filter(Boolean).slice(0, 30)
+    console.warn(sample)
+  }
+  return resultado
 }
 
 // =============================================================

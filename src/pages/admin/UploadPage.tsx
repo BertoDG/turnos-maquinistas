@@ -212,27 +212,48 @@ export default function UploadPage() {
     if (!file || !profile) return
     try {
       setStep('analizando')
+      setProgressMsg('Extrayendo trenes del PDF…')
+
+      // Verificar que la tabla lh_trenes existe antes de parsear
+      const { error: tableErr } = await supabase
+        .from('lh_trenes')
+        .select('numero', { count: 'exact', head: true })
+      if (tableErr) {
+        setStep('error')
+        setErrorMsg(
+          `La tabla lh_trenes no existe en Supabase. ` +
+          `Aplica la migración 019_lh_trenes.sql en el panel SQL de Supabase. ` +
+          `(Error: ${tableErr.message})`
+        )
+        return
+      }
+
       const trenes = await parseLH820(file)
 
       if (trenes.length === 0) {
         setStep('error')
-        setErrorMsg('No se encontraron trenes en el PDF. Comprueba que es el Anejo 5 del LH-820.')
+        setErrorMsg(
+          'No se encontraron trenes (números 7XXXX) en el PDF. ' +
+          'Comprueba en la Consola del navegador (F12 → Consola) los mensajes [LH820] ' +
+          'para ver qué texto extrajo el parser. ' +
+          'Asegúrate de subir el Anejo 5 del LH AM 820.'
+        )
         return
       }
 
-      // Reutilizamos maquinistaInfo para mostrar el resumen de LH-820
-      setMaquinistaInfo({
-        profileId:    '',
-        nombre:       `${trenes.length} trenes extraídos`,
-        apellidos:    '',
-        matricula:    '',
-        totalDias:    trenes.reduce((s, t) => s + t.paradas.length, 0),
-        year:         new Date().getFullYear(),
-        esMismoUsuario: false,
-      })
-      // Guardamos los trenes parseados para la confirmación
+      const totalParadas = trenes.reduce((s, t) => s + t.paradas.length, 0)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(parsedDataRef as React.MutableRefObject<any>).current = { __lh820: trenes }
+
+      setMaquinistaInfo({
+        profileId:      '',
+        nombre:         `${trenes.length} trenes encontrados`,
+        apellidos:      '',
+        matricula:      '',
+        totalDias:      totalParadas,
+        year:           new Date().getFullYear(),
+        esMismoUsuario: false,
+      })
       setStep('confirmacion')
     } catch (e) {
       setStep('error')
@@ -250,22 +271,29 @@ export default function UploadPage() {
       setStep('guardando')
       const BATCH = 50
       let total = 0
+
       for (let i = 0; i < trenes.length; i += BATCH) {
         const chunk = trenes.slice(i, i + BATCH)
         const { error: err } = await supabase
           .from('lh_trenes')
           .upsert(chunk, { onConflict: 'numero' })
-        if (err) throw new Error('Error guardando trenes: ' + err.message)
+        if (err) throw new Error(`Error en lote ${i / BATCH + 1}: ${err.message}`)
         total += chunk.length
         setProgressMsg(`Guardando… ${total} / ${trenes.length} trenes`)
       }
 
-      await supabase.from('pdf_uploads').insert({
+      // Registrar en historial (si falla el check constraint de tipo, notificamos)
+      const { error: uploadErr } = await supabase.from('pdf_uploads').insert({
         filename: file!.name, tipo: 'lh_trenes', storage_path: '',
         estado: 'completado', periodo_anio: new Date().getFullYear(),
         subido_por: profile.id, registros_creados: total,
         log_texto: `LH-820 importado desde PDF. ${total} trenes, ${maquinistaInfo?.totalDias ?? 0} paradas.`,
       })
+      if (uploadErr) {
+        // No es un error crítico: los trenes ya están importados
+        console.warn('[LH820] pdf_uploads insert falló:', uploadErr.message,
+          '— Aplica migración 020_upload_tipo_lh_trenes.sql')
+      }
 
       setRecordsCreated(total)
       setStep('done')
