@@ -669,6 +669,9 @@ export interface LH820Parada {
   hora:       string | null
   comercial:  boolean
   apd:        boolean
+  sentido:    'IDA' | 'VUELTA'
+  sit_km:     number | null
+  vmax:       number | null
 }
 
 export interface LH820Tren {
@@ -692,7 +695,15 @@ function lh820TipoTren(numero: string): string {
 
 /**
  * Extrae trenes del PDF LH-820 (Anejo 5) usando extracción posicional de pdf.js.
- * Cada página tiene columnas de trenes (números 7XXXX) con horarios por estación.
+ *
+ * Cada página tiene DOS tablas lado a lado:
+ *  - Tabla izquierda → sentido IDA  (trenes de subida)
+ *  - Tabla derecha   → sentido VUELTA (trenes de bajada)
+ * Ambas tienen los mismos números de tren pero las paradas van en dirección contraria.
+ *
+ * En muchas páginas los números de tren están como texto rotado 90°, por lo que
+ * cada número aparece en su propia "fila" en el rowMap. Por eso NO podemos romper
+ * al encontrar la primera fila con trenes — hay que escanear TODAS las filas.
  */
 export async function parseLH820(file: File): Promise<LH820Tren[]> {
   const arrayBuffer = await file.arrayBuffer()
@@ -701,239 +712,216 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
   console.log(`[LH820] PDF abierto: ${pdf.numPages} páginas`)
 
-  // Mapa numero→tren (acumula paradas de múltiples páginas)
   const trenesMap = new Map<string, LH820Tren>()
 
-  // Números de tren: 5 dígitos comenzando por 7 (búsqueda en cualquier texto del item)
   const TREN_SCAN_RE = /\b(7\d{4})\b/g
-  // Hora: HH.MM, HH:MM, HH,MM (dentro del texto del item)
   const HORA_SCAN_RE = /\b(\d{1,2})[.:](\d{2})\b/
-  const COMERCIAL    = new Set(['●', '•', '·', '|', 'l', 'o', '○'])
-
-  // Tolerancia Y para agrupar items de la misma fila visual (puntos PDF)
-  const ROW_TOL = 4
+  // Sit Km: número decimal con exactamente 1 decimal (49.7, 38.0…)
+  const SITKM_RE    = /^\d{1,3}\.\d$/
+  // VMax: entero sin punto, en rango operativo razonable
+  const VMAX_RE     = /^\d{2,3}$/
+  const COMERCIAL   = new Set(['●', '•', '·', '|', 'l', 'o', '○'])
+  const ROW_TOL     = 4
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page        = await pdf.getPage(pageNum)
     const textContent = await page.getTextContent()
 
-    // Extraer items con posición (x, y, text, width)
+    // ── 1. Extraer items con posición ──────────────────────────────────────────
     const items: { x: number; y: number; text: string; width: number }[] = []
     for (const raw of textContent.items) {
       const item = raw as { str?: string; transform?: number[]; width?: number }
       const text = item.str?.trim()
       if (!text || !item.transform) continue
-      items.push({
-        x:     item.transform[4],
-        y:     item.transform[5],
-        text,
-        width: item.width ?? 0,
-      })
+      items.push({ x: item.transform[4], y: item.transform[5], text, width: item.width ?? 0 })
     }
     if (items.length === 0) continue
 
-    // Agrupar por fila (Y redondeado a múltiplos de ROW_TOL)
+    // ── 2. Agrupar por fila (Y redondeado a múltiplos de ROW_TOL) ─────────────
     const rowMap = new Map<number, { x: number; text: string; width: number }[]>()
     for (const it of items) {
       const ry = Math.round(it.y / ROW_TOL) * ROW_TOL
       if (!rowMap.has(ry)) rowMap.set(ry, [])
       rowMap.get(ry)!.push({ x: it.x, text: it.text, width: it.width })
     }
-
-    // Ordenar filas de arriba a abajo (Y mayor = más arriba en PDF)
     const rows = Array.from(rowMap.entries())
       .sort((a, b) => b[0] - a[0])
       .map(([, cells]) => cells.sort((a, b) => a.x - b.x))
 
-
-    // ── Buscar fila de cabecera con números de tren 7XXXX ──────────────────────
-    // Buscamos dentro de cada texto del item (matchAll), no solo items exactos.
-    // Cuando un item contiene múltiples trenes (p.ej. "70400 70402"), estimamos
-    // la posición X de cada número interpolando dentro del ancho del item.
-    let headerIdx = -1
-    let trenCols: { num: string; x: number }[] = []
+    // ── 3. Buscar TODOS los números de tren en la página ──────────────────────
+    //
+    // PROBLEMA CLAVE: en páginas con texto rotado 90°, cada número de tren está
+    // en su propia "fila" (Y diferente). El código anterior rompía al encontrar la
+    // primera fila → solo capturaba el primer tren. Ahora recorremos TODAS las filas
+    // y acumulamos todos los trenes encontrados en filas sin horas (= cabeceras).
+    const headerRowSet = new Set<number>()
+    const allTrenCols:  { num: string; x: number }[] = []
 
     for (let ri = 0; ri < rows.length; ri++) {
-      const found: { num: string; x: number }[] = []
+      const rowHasTimes = rows[ri].some(c => HORA_SCAN_RE.test(c.text))
+      if (rowHasTimes) continue   // filas con horas son filas de datos, no cabecera
+
       for (const c of rows[ri]) {
         const matches = [...c.text.matchAll(TREN_SCAN_RE)]
         if (matches.length === 0) continue
 
-        // Si el item contiene VARIOS números de tren (p.ej. "70407 70409 70411"
-        // en un solo str), debemos estimar la X de cada uno interpolando dentro
-        // del ancho del item. Sin esto, todos quedarían con la misma X y los
-        // límites de columna del tren central colapsarían a anchura cero.
+        headerRowSet.add(ri)
         if (matches.length === 1 || c.width <= 0) {
-          // Caso simple: un solo match o sin info de anchura → usar x del item
-          for (const m of matches) {
-            found.push({ num: m[1], x: c.x })
-          }
+          for (const m of matches) allTrenCols.push({ num: m[1], x: c.x })
         } else {
-          // Caso múltiple: interpolar X según la posición del carácter en el texto
           const textLen = c.text.length
           for (const m of matches) {
-            const charFraction = (m.index ?? 0) / textLen
-            found.push({ num: m[1], x: c.x + charFraction * c.width })
+            const frac = (m.index ?? 0) / textLen
+            allTrenCols.push({ num: m[1], x: c.x + frac * c.width })
           }
         }
       }
-      if (found.length >= 1) {
-        headerIdx = ri
-        trenCols  = found
-        break
-      }
     }
 
-    if (headerIdx === -1) {
+    if (allTrenCols.length === 0) {
       console.log(`[LH820] Pág ${pageNum}: sin cabecera de trenes`)
       continue
     }
 
-    console.log(`[LH820] Pág ${pageNum}: trenes encontrados:`,
-      trenCols.map(t => `${t.num}@x=${t.x.toFixed(1)}`).join(' '))
+    // Deduplicar manteniendo orden de primera aparición
+    const seenNums  = new Set<string>()
+    const uniqueNums: string[] = []
+    for (const { num } of allTrenCols) {
+      if (!seenNums.has(num)) { seenNums.add(num); uniqueNums.push(num) }
+    }
 
-    // Registrar trenes nuevos
-    for (const { num } of trenCols) {
+    console.log(`[LH820] Pág ${pageNum}: trenes → ${uniqueNums.join(', ')}`)
+
+    for (const num of uniqueNums) {
       if (!trenesMap.has(num)) {
         trenesMap.set(num, {
-          numero:        num,
-          tipo:          lh820TipoTren(num),
-          linea:         null,
-          paradas:       [],
-          vigente_desde: null,
-          notas:         null,
+          numero: num, tipo: lh820TipoTren(num),
+          linea: null, paradas: [], vigente_desde: null, notas: null,
         })
       }
     }
 
-    // ── Determinar posiciones reales de columnas Hora ─────────────────────────
-    // El número de tren en la cabecera aparece sobre las sub-columnas C, Hora, T,
-    // pero puede estar desplazado respecto a la columna Hora donde están los tiempos.
-    // Además, cada página tiene DOS tablas (ida y vuelta) con los mismos trenes,
-    // así que la misma X de cabecera puede coincidir para varios trenes.
-    //
-    // Estrategia: escanear las primeras filas de datos para detectar las posiciones
-    // X reales de los ítems con hora, clusterizarlas y asignarlas a cada tren
-    // (de izquierda a derecha). Esto funciona con cualquier estructura de la cabecera.
-
-    const sortedCols = [...trenCols].sort((a, b) => a.x - b.x)
-
-    // 1. Recoger todos los X de ítems con hora en TODAS las filas de la página.
-    //    Necesario porque en algunas páginas los números de tren están como texto
-    //    rotado 90° (x≈22 en el margen), y los datos de horario aparecen en filas
-    //    que pueden estar ANTES del headerIdx en el orden por Y decreciente.
+    // ── 4. Detectar clústeres de columnas Hora ────────────────────────────────
     const allTimeXs: number[] = []
     for (let ri = 0; ri < rows.length; ri++) {
-      if (ri === headerIdx) continue  // saltar la fila de cabecera
+      if (headerRowSet.has(ri)) continue
       for (const c of rows[ri]) {
         if (HORA_SCAN_RE.test(c.text)) allTimeXs.push(c.x)
       }
     }
     allTimeXs.sort((a, b) => a - b)
 
-    // 2. Clusterizar: X's a ≤ 30px de distancia pertenecen al mismo clúster
     const rawClusters: number[] = []
     for (const x of allTimeXs) {
       const last = rawClusters[rawClusters.length - 1] ?? -Infinity
-      if (x - last > 30) {
-        rawClusters.push(x)
-      } else {
-        // Media móvil para aproximar el centro del clúster
-        rawClusters[rawClusters.length - 1] = (last + x) / 2
-      }
+      if (x - last > 30) rawClusters.push(x)
+      else rawClusters[rawClusters.length - 1] = (last + x) / 2
     }
 
-    // 3. Seleccionar los clústeres correctos para las columnas de trenes.
+    // ── 5. Separar clústeres en IDA (tabla izquierda) y VUELTA (tabla derecha) ─
     //
-    //    Estrategia:
-    //    a) Si tenemos EXACTAMENTE tantos clústeres como trenes → usarlos todos
-    //       directamente (caso más común: 1 tren / 2 trenes / 6 trenes con layout
-    //       de dos tablas donde el gap entre tablas no es ruido, son datos).
-    //    b) Si tenemos MÁS clústeres que trenes → intentar eliminar los de la
-    //       "zona de estación" (x pequeño antes del primer gran salto).
-    //       Si tras filtrar aún tenemos suficientes → bien.
-    //       Si no → usar todos los raw de todos modos (mejor que el fallback).
-    //    c) Si tenemos MENOS clústeres que trenes → fallback a posiciones de cabecera.
+    // Cada página tiene DOS tablas separadas por un hueco grande (>150 px).
+    // Identificamos el mayor salto entre clústeres consecutivos y lo usamos
+    // como frontera IDA/VUELTA. Asignamos los N trenes únicos a cada mitad.
 
-    let trainClusters: number[]
+    const N = uniqueNums.length
 
-    if (rawClusters.length === sortedCols.length) {
-      // Caso (a): coincidencia exacta — usarlos todos sin filtrar
-      trainClusters = rawClusters
-    } else if (rawClusters.length > sortedCols.length) {
-      // Caso (b): sobran clústeres, intentar eliminar zona de estación
-      let trainZoneStart = 0
+    let splitIdx = -1
+    let maxGap   = 0
+    for (let ci = 1; ci < rawClusters.length; ci++) {
+      const gap = rawClusters[ci] - rawClusters[ci - 1]
+      if (gap > maxGap) { maxGap = gap; splitIdx = ci }
+    }
+
+    let idaClusters:    number[] = []
+    let vueltaClusters: number[] = []
+
+    if (maxGap > 150 && splitIdx > 0) {
+      // Dos tablas detectadas — recortar a N clústeres por tabla
+      const left  = rawClusters.slice(0, splitIdx)
+      const right = rawClusters.slice(splitIdx)
+
+      // Zona izquierda puede tener clústeres extra de la columna de estaciones;
+      // nos quedamos con los N ÚLTIMOS (más a la derecha = columnas Hora reales).
+      idaClusters    = left.length  > N ? left.slice(left.length - N)  : left
+      // Zona derecha: nos quedamos con los N PRIMEROS
+      vueltaClusters = right.length > N ? right.slice(0, N) : right
+    } else {
+      // Una sola tabla (o no se pudo separar): tratar como IDA
+      // Eliminar clústeres de la zona de estaciones (x muy pequeño)
+      let trainStart = 0
       for (let ci = 1; ci < rawClusters.length; ci++) {
-        if (rawClusters[ci] - rawClusters[ci - 1] > 150) {
-          trainZoneStart = ci
-          break
-        }
+        if (rawClusters[ci] - rawClusters[ci - 1] > 100) { trainStart = ci; break }
       }
-      const filtered = rawClusters.slice(trainZoneStart)
-      trainClusters = filtered.length >= sortedCols.length ? filtered : rawClusters
-    } else {
-      // Caso (c): faltan clústeres → usar array vacío para activar el fallback
-      trainClusters = []
+      const filtered = rawClusters.slice(trainStart)
+      idaClusters = filtered.length >= N ? filtered.slice(0, N) : rawClusters.slice(0, N)
     }
 
-    // 4. Asignar posiciones reales a sortedCols si tenemos suficientes clústeres
-    let usedClusters = false
-    if (trainClusters.length >= sortedCols.length) {
-      for (let i = 0; i < sortedCols.length; i++) sortedCols[i].x = trainClusters[i]
-      usedClusters = true
-      console.log(`[LH820] Pág ${pageNum} posiciones desde clústeres:`,
-        sortedCols.map(c => `${c.num}@x=${c.x.toFixed(0)}`).join(' '))
-    } else {
-      // Fallback: usar las posiciones de cabecera (funciona si no hay offset)
-      console.warn(
-        `[LH820] Pág ${pageNum}: solo ${rawClusters.length} clústeres para ${sortedCols.length} trenes.` +
-        ` Clústeres raw: [${rawClusters.map(x => x.toFixed(0)).join(', ')}].` +
-        ` Usando posiciones de cabecera.`
-      )
+    console.log(`[LH820] Pág ${pageNum}: IDA  [${idaClusters.map(x=>x.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum}: VUELTA [${vueltaClusters.map(x=>x.toFixed(0)).join(',')}]`)
+
+    // ── 6. Construir colBounds para IDA y VUELTA ──────────────────────────────
+    type Bound = { num: string; xMin: number; xMax: number; sentido: 'IDA' | 'VUELTA' }
+
+    function makeBounds(clusters: number[], nums: string[], sentido: 'IDA' | 'VUELTA'): Bound[] {
+      return clusters.map((cx, i) => {
+        const prev = i > 0 ? clusters[i - 1] : cx - 300
+        const next = i < clusters.length - 1 ? clusters[i + 1] : cx + 300
+        return { num: nums[i] ?? '', xMin: (prev + cx) / 2, xMax: (cx + next) / 2, sentido }
+      }).filter(b => b.num !== '')
     }
 
-    // 5. Calcular límites exclusivos por midpoints entre posiciones adyacentes
-    const colBounds = sortedCols.map((col, i) => {
-      const prevX = i > 0 ? sortedCols[i - 1].x : col.x - 300
-      const nextX = i < sortedCols.length - 1 ? sortedCols[i + 1].x : col.x + 300
-      return {
-        num:  col.num,
-        xMin: (prevX + col.x) / 2,
-        xMax: (col.x + nextX) / 2,
-      }
-    })
+    const allBounds: Bound[] = [
+      ...makeBounds(idaClusters,    uniqueNums, 'IDA'),
+      ...makeBounds(vueltaClusters, uniqueNums, 'VUELTA'),
+    ]
 
-    // 6. Frontera izquierda de la zona de trenes (para filtrar columna de estación).
-    //    Usamos la posición del primer clúster/columna menos un pequeño margen para
-    //    incluir los bullets C que están justo a su izquierda, pero sin que el umbral
-    //    caiga por debajo de los nombres de estación (que pueden estar en x≈20-50).
-    const minTrenX = sortedCols[0].x - 5
+    if (allBounds.length === 0) {
+      console.warn(`[LH820] Pág ${pageNum}: sin columnas detectadas, página omitida`)
+      continue
+    }
 
-    console.log(`[LH820] Pág ${pageNum} límites de columnas:`,
-      colBounds.map(b => `${b.num}=[${b.xMin.toFixed(0)},${b.xMax.toFixed(0)}]`).join(' '))
+    // Frontera izquierda de la zona de trenes (para identificar columna de estación)
+    const firstTrainX = Math.min(...allBounds.map(b => b.xMin))
+    const minTrenX    = firstTrainX   // items con x < minTrenX → zona izquierda (estación)
 
-    // ── Procesar filas de datos ────────────────────────────────────────────────
-    // Procesamos TODAS las filas excepto la de cabecera (que contiene los números
-    // de tren, ya sean horizontales o rotados verticalmente).
+    // ── 7. Procesar filas de datos ─────────────────────────────────────────────
     for (let ri = 0; ri < rows.length; ri++) {
-      if (ri === headerIdx) continue   // saltar la fila de cabecera
+      if (headerRowSet.has(ri)) continue
       const row = rows[ri]
 
-      // Items a la izquierda de la primera columna de trenes → estación
+      // Items a la izquierda de la primera columna de trenes
       const stItems = row.filter(c => c.x < minTrenX - 5)
       if (stItems.length === 0) continue
 
-      const estacion = stItems.map(c => c.text).join(' ').trim()
-      // Descartar filas vacías, puramente numéricas o muy cortas
-      if (!estacion || estacion.length < 2 || /^\d[\d\s,.]*$/.test(estacion)) continue
+      // Separar: números decimales → sit_km, enteros → vmax, texto → estación
+      let estacion = ''
+      let sit_km:  number | null = null
+      let vmax:    number | null = null
+
+      for (const c of stItems) {
+        if (SITKM_RE.test(c.text)) {
+          sit_km = parseFloat(c.text)
+        } else if (VMAX_RE.test(c.text)) {
+          const v = parseInt(c.text, 10)
+          if (v >= 10 && v <= 220) vmax = v
+        } else if (/[A-Za-záéíóúüñÁÉÍÓÚÜÑ(]/.test(c.text)) {
+          estacion += (estacion ? ' ' : '') + c.text
+        }
+      }
+
+      estacion = estacion.trim()
+      // Descartar filas sin estación real (solo eran marcas de VMax/Km sin parada)
+      if (!estacion || estacion.length < 2) continue
 
       const apd = estacion.toUpperCase().includes('APD')
 
-      // Para cada tren, buscar su hora dentro de su rango X exclusivo
-      for (const { num, xMin, xMax } of colBounds) {
-        const tren      = trenesMap.get(num)!
-        const trenItems = row.filter(c => c.x >= xMin && c.x <= xMax)
+      // Para cada columna (IDA o VUELTA), buscar la hora dentro de su rango X
+      for (const { num, xMin, xMax, sentido } of allBounds) {
+        const tren = trenesMap.get(num)
+        if (!tren) continue
 
+        const trenItems = row.filter(c => c.x >= xMin && c.x <= xMax)
         let hora:     string | null = null
         let comercial = false
 
@@ -945,43 +933,42 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
         if (!hora) continue
 
-        // Evitar paradas duplicadas consecutivas
-        const last = tren.paradas[tren.paradas.length - 1]
-        if (last && last.hora === hora && last.estacion === estacion) continue
+        // Evitar paradas duplicadas consecutivas dentro del mismo sentido
+        const paradas = tren.paradas
+        const lastSameSentido = [...paradas].reverse().find(p => p.sentido === sentido)
+        if (lastSameSentido && lastSameSentido.hora === hora && lastSameSentido.estacion === estacion) continue
 
         tren.paradas.push({
-          orden:    tren.paradas.length,
+          orden:    paradas.length,
           estacion,
           hora,
           comercial,
           apd,
+          sentido,
+          sit_km,
+          vmax,
         })
       }
     }
   }
 
-  const todos     = Array.from(trenesMap.values())
-  const resultado = todos.filter(t => t.paradas.length > 0)
+  const todos      = Array.from(trenesMap.values())
+  const resultado  = todos.filter(t => t.paradas.length > 0)
   const sinParadas = todos.filter(t => t.paradas.length === 0).map(t => t.numero)
 
-  console.log(`[LH820] Trenes detectados en cabeceras: ${todos.length}`)
+  console.log(`[LH820] Trenes detectados: ${todos.length}`)
   console.log(`[LH820] Con paradas: ${resultado.length} → ${resultado.map(t => t.numero).join(', ')}`)
   if (sinParadas.length > 0) {
     console.warn(`[LH820] Sin paradas (filtrados): ${sinParadas.join(', ')}`)
-    console.warn('[LH820] Estos trenes se vieron en cabecera pero no se asociaron tiempos.')
-    console.warn('[LH820] Revisa los logs "límites de columnas" y comprueba que los X de los')
-    console.warn('[LH820] datos (hora) caen dentro del rango xMin-xMax de cada tren.')
   }
 
   if (resultado.length === 0) {
-    console.warn('[LH820] Sin resultado. Muestra de texto de pág 1:')
+    console.warn('[LH820] Sin resultado. Muestra pág 1:')
     const page1 = await pdf.getPage(1)
     const tc    = await page1.getTextContent()
-    const sample = (tc.items as { str?: string; transform?: number[] }[])
-      .filter(i => i.str?.trim())
-      .slice(0, 40)
-      .map(i => `x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`)
-    console.warn(sample.join('\n'))
+    ;(tc.items as { str?: string; transform?: number[] }[])
+      .filter(i => i.str?.trim()).slice(0, 40)
+      .forEach(i => console.warn(`  x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`))
   }
   return resultado
 }
