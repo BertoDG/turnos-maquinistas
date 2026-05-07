@@ -23,7 +23,7 @@ export type SolicitudEstado =
 
 export type PdfUploadEstado = 'pendiente' | 'procesando' | 'completado' | 'error'
 
-export type PdfUploadTipo = 'catalogo_turnos' | 'asignacion_maquinista'
+export type PdfUploadTipo = 'catalogo_turnos' | 'asignacion_maquinista' | 'lh_trenes'
 
 export type SegmentoTipo =
   | 'conduccion'

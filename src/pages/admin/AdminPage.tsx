@@ -172,7 +172,9 @@ export default function AdminPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{upload.filename}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {upload.tipo === 'catalogo_turnos' ? 'Catálogo de turnos' : 'Asignación maquinista'}
+                      {upload.tipo === 'catalogo_turnos' ? 'Catálogo de turnos'
+                        : upload.tipo === 'lh_trenes'   ? 'LH-820 Trenes'
+                        : 'Asignación maquinista'}
                       {upload.periodo_mes && upload.periodo_anio && (
                         <> · {upload.periodo_mes}/{upload.periodo_anio}</>
                       )}

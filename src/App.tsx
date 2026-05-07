@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { ColorPrefsProvider } from '@/contexts/ColorPrefsContext'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import Layout from '@/components/layout/Layout'
 import LoginPage from '@/pages/LoginPage'
 import CalendarPage from '@/pages/CalendarPage'
@@ -166,13 +167,12 @@ function CompleteProfileScreen() {
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { isAdmin, loading } = useAuth()
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <div className="w-8 h-8 border-3 border-red-500 border-t-transparent rounded-full animate-spin" />
-    </div>
-  )
-  return isAdmin ? <>{children}</> : <Navigate to="/" replace />
+  // PrivateRoute ya garantiza que loading=false cuando se llega aquí.
+  // Solo verificamos isAdmin y envolvemos con ErrorBoundary para capturar
+  // cualquier error de renderizado y mostrarlo en lugar de pantalla en blanco.
+  const { isAdmin } = useAuth()
+  if (!isAdmin) return <Navigate to="/" replace />
+  return <ErrorBoundary>{children}</ErrorBoundary>
 }
 
 function AppRoutes() {

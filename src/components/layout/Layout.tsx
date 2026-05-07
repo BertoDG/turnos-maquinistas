@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Outlet, useLocation, matchPath } from 'react-router-dom'
 import { MainScrollContext } from '@/contexts/ScrollContext'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import BottomNav from './BottomNav'
 import TopBar from './TopBar'
 import CalendarPage from '@/pages/CalendarPage'
@@ -45,12 +46,13 @@ export default function Layout() {
               pointerEvents: isCalendarRoute ? 'auto' : 'none',
             }}
           >
-            <CalendarPage />
-
-            {/* Overlay del detalle del día */}
-            {diaMatch && (
-              <DayDetailPage key={diaMatch.params.dateStr} />
-            )}
+            <ErrorBoundary>
+              <CalendarPage />
+              {/* Overlay del detalle del día */}
+              {diaMatch && (
+                <DayDetailPage key={diaMatch.params.dateStr} />
+              )}
+            </ErrorBoundary>
           </div>
 
           {/* ── Otras pestañas — Outlet normal ── */}
