@@ -39,6 +39,7 @@ export default function UploadPage() {
   const [maquinistaInfo, setMaquinistaInfo] = useState<MaquinistaInfo | null>(null)
   const [progressMsg, setProgressMsg] = useState('')
   const [recordsCreated, setRecordsCreated] = useState(0)
+  const [lhTrenesEncontrados, setLhTrenesEncontrados] = useState<string[]>([])
 
   // Datos del PDF parseado (guardados en memoria hasta confirmar)
   const parsedDataRef = useRef<Awaited<ReturnType<typeof parseMaquinistaAsignacion>> | null>(null)
@@ -63,6 +64,7 @@ export default function UploadPage() {
     setStep('idle')
     setErrorMsg('')
     setMaquinistaInfo(null)
+    setLhTrenesEncontrados([])
     parsedDataRef.current = null
   }
 
@@ -71,6 +73,7 @@ export default function UploadPage() {
     setStep('idle')
     setErrorMsg('')
     setMaquinistaInfo(null)
+    setLhTrenesEncontrados([])
     parsedDataRef.current = null
   }
 
@@ -230,18 +233,23 @@ export default function UploadPage() {
 
       const trenes = await parseLH820(file)
 
+      console.log('[LH820-Upload] Trenes con paradas listos para importar:', trenes.map(t => `${t.numero}(${t.paradas.length}p)`).join(', ') || '(ninguno)')
+
       if (trenes.length === 0) {
         setStep('error')
         setErrorMsg(
-          'No se encontraron trenes (números 7XXXX) en el PDF. ' +
-          'Comprueba en la Consola del navegador (F12 → Consola) los mensajes [LH820] ' +
-          'para ver qué texto extrajo el parser. ' +
+          'No se encontraron trenes con horario en el PDF. ' +
+          'Abre la Consola del navegador (F12 → Consola) y busca los mensajes [LH820] ' +
+          'para ver qué páginas procesó el parser y qué trenes detectó. ' +
           'Asegúrate de subir el Anejo 5 del LH AM 820.'
         )
         return
       }
 
       const totalParadas = trenes.reduce((s, t) => s + t.paradas.length, 0)
+      const numerosOrdenados = trenes.map(t => t.numero).sort()
+      setLhTrenesEncontrados(numerosOrdenados)
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(parsedDataRef as React.MutableRefObject<any>).current = { __lh820: trenes }
 
@@ -274,10 +282,14 @@ export default function UploadPage() {
 
       for (let i = 0; i < trenes.length; i += BATCH) {
         const chunk = trenes.slice(i, i + BATCH)
+        console.log(`[LH820-Upload] Upsert lote ${i / BATCH + 1}: trenes`, chunk.map((t: { numero: string }) => t.numero).join(', '))
         const { error: err } = await supabase
           .from('lh_trenes')
           .upsert(chunk, { onConflict: 'numero' })
-        if (err) throw new Error(`Error en lote ${i / BATCH + 1}: ${err.message}`)
+        if (err) {
+          console.error('[LH820-Upload] Error Supabase:', err)
+          throw new Error(`Error Supabase (lote ${i / BATCH + 1}): ${err.message} [code: ${err.code}]`)
+        }
         total += chunk.length
         setProgressMsg(`Guardando… ${total} / ${trenes.length} trenes`)
       }
@@ -505,14 +517,28 @@ export default function UploadPage() {
 
           {tipo === 'lh_trenes' ? (
             /* ── Resumen LH-820 ── */
-            <div className="mx-4 mt-4 mb-2 p-4 rounded-xl border-2 border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-green-200 dark:bg-green-800 flex items-center justify-center shrink-0">
-                <Train className="w-5 h-5 text-green-700 dark:text-green-300" />
+            <div className="mx-4 mt-4 mb-2 flex flex-col gap-2">
+              <div className="p-4 rounded-xl border-2 border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-green-200 dark:bg-green-800 flex items-center justify-center shrink-0">
+                  <Train className="w-5 h-5 text-green-700 dark:text-green-300" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900 dark:text-white">{maquinistaInfo.nombre}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{maquinistaInfo.totalDias} paradas en total</p>
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900 dark:text-white">{maquinistaInfo.nombre}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">{maquinistaInfo.totalDias} paradas en total</p>
-              </div>
+              {lhTrenesEncontrados.length > 0 && (
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
+                  <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1.5">Trenes a importar</p>
+                  <div className="flex flex-wrap gap-1">
+                    {lhTrenesEncontrados.map(num => (
+                      <span key={num} className="px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                        {num}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             /* ── Destinatario maquinista ── */
