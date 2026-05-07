@@ -753,48 +753,110 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       rows.push(currentRow.sort((a, b) => a.x - b.x).map(it => ({ col: it.x, text: it.text, width: it.width })))
     }
 
-    // ── 3. Buscar TODOS los números de tren en la página ──────────────────────
-    const headerRowSet = new Set<number>()
-    const allTrenCols: { num: string; col: number }[] = []
+    // ── Detectar si hay dos tablas (superior e inferior) ─────────────────────
+    const trenRows = rows.filter((row, ri) => row.some(c => TREN_SCAN_RE.test(c.text)))
+    if (trenRows.length >= 2) {
+      // Dos tablas: procesar por separado usando Y real de los items
+      const trenYs = trenRows.map(row => row.find(c => TREN_SCAN_RE.test(c.text))!.col)  // col es Y
+      const yThreshold = (Math.min(...trenYs) + Math.max(...trenYs)) / 2
+      const upperRows = rows.filter(row => row.length > 0 && row[0].col < yThreshold)
+      const lowerRows = rows.filter(row => row.length > 0 && row[0].col >= yThreshold)
 
-    for (let ri = 0; ri < rows.length; ri++) {
-      const row = rows[ri]
-      const trenCells = row.filter(c => TREN_SCAN_RE.test(c.text))
-      if (trenCells.length > 0) {
-        headerRowSet.add(ri)
-        for (const c of trenCells) {
-          allTrenCols.push({ num: c.text, col: c.col })
-        }
+      console.log(`[LH820] Pág ${pageNum}: dos tablas detectadas (superior: ${upperRows.length} filas, inferior: ${lowerRows.length} filas)`)
+
+      // Procesar tabla superior (IDA)
+      await processTable(upperRows, pageNum, 'superior', trenesMap, TREN_SCAN_RE, HORA_SCAN_RE, SITKM_RE, VMAX_RE, COMERCIAL, 'IDA')
+
+      // Procesar tabla inferior (VUELTA)
+      await processTable(lowerRows, pageNum, 'inferior', trenesMap, TREN_SCAN_RE, HORA_SCAN_RE, SITKM_RE, VMAX_RE, COMERCIAL, 'VUELTA')
+    } else {
+      // Una sola tabla
+      console.log(`[LH820] Pág ${pageNum}: una tabla (${rows.length} filas)`)
+      await processTable(rows, pageNum, 'única', trenesMap, TREN_SCAN_RE, HORA_SCAN_RE, SITKM_RE, VMAX_RE, COMERCIAL)
+    }
+  }
+
+  const todos = Array.from(trenesMap.values())
+  const resultado = todos.filter(t => t.paradas.length > 0)
+  const sinParadas = todos.filter(t => t.paradas.length === 0).map(t => t.numero)
+
+  console.log(`[LH820] Trenes detectados: ${todos.length}`)
+  console.log(`[LH820] Con paradas: ${resultado.length} → ${resultado.map(t => t.numero).join(', ')}`)
+  if (sinParadas.length > 0) {
+    console.warn(`[LH820] Sin paradas (filtrados): ${sinParadas.join(', ')}`)
+  }
+
+  if (resultado.length === 0) {
+    console.warn('[LH820] Sin resultado. Muestra pág 1:')
+    const page1 = await pdf.getPage(1)
+    const tc = await page1.getTextContent()
+    ;(tc.items as { str?: string; transform?: number[] }[])
+      .filter(i => i.str?.trim()).slice(0, 40)
+      .forEach(i => console.warn(`  x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`))
+  }
+  return resultado
+}
+
+// ── Función auxiliar para procesar una tabla ────────────────────────────────
+async function processTable(
+  rows: { col: number; text: string; width: number }[][],
+  pageNum: number,
+  tableType: string,
+  trenesMap: Map<string, LH820Tren>,
+  TREN_SCAN_RE: RegExp,
+  HORA_SCAN_RE: RegExp,
+  SITKM_RE: RegExp,
+  VMAX_RE: RegExp,
+  COMERCIAL: Set<string>,
+  fixedSentido?: 'IDA' | 'VUELTA'
+) {
+  // ── 3. Buscar TODOS los números de tren en la tabla ──────────────────────
+  const headerRowSet = new Set<number>()
+  const allTrenCols: { num: string; col: number }[] = []
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri]
+    const trenCells = row.filter(c => TREN_SCAN_RE.test(c.text))
+    if (trenCells.length > 0) {
+      headerRowSet.add(ri)
+      for (const c of trenCells) {
+        allTrenCols.push({ num: c.text, col: c.col })
       }
     }
+  }
 
-    if (allTrenCols.length === 0) {
-      console.log(`[LH820] Pág ${pageNum}: sin cabecera de trenes`)
-      continue
+  if (allTrenCols.length === 0) {
+    console.log(`[LH820] Pág ${pageNum} (${tableType}): sin cabecera de trenes`)
+    return
+  }
+
+  // Deduplicar manteniendo orden de primera aparición
+  const seenNums = new Set<string>()
+  const uniqueNums: string[] = []
+  for (const { num } of allTrenCols) {
+    if (!seenNums.has(num)) {
+      seenNums.add(num)
+      uniqueNums.push(num)
     }
+  }
 
-    // Deduplicar manteniendo orden de primera aparición
-    const seenNums = new Set<string>()
-    const uniqueNums: string[] = []
-    for (const { num } of allTrenCols) {
-      if (!seenNums.has(num)) {
-        seenNums.add(num)
-        uniqueNums.push(num)
-      }
+  console.log(`[LH820] Pág ${pageNum} (${tableType}): trenes → ${uniqueNums.join(', ')}`)
+
+  for (const num of uniqueNums) {
+    if (!trenesMap.has(num)) {
+      trenesMap.set(num, {
+        numero: num, tipo: lh820TipoTren(num),
+        linea: null, paradas: [], vigente_desde: null, notas: null,
+      })
     }
+  }
 
-    console.log(`[LH820] Pág ${pageNum}: trenes → ${uniqueNums.join(', ')}`)
+  // ── 5. Asignar sentido basado en tabla o detectar IDA/VUELTA ──────────────
+  const N = uniqueNums.length
+  let sentido: 'IDA' | 'VUELTA' = fixedSentido || 'IDA'
 
-    for (const num of uniqueNums) {
-      if (!trenesMap.has(num)) {
-        trenesMap.set(num, {
-          numero: num, tipo: lh820TipoTren(num),
-          linea: null, paradas: [], vigente_desde: null, notas: null,
-        })
-      }
-    }
-
-    // ── 4. Detectar clústeres de columnas Hora ────────────────────────────────
+  if (!fixedSentido) {
+    // Detectar clústeres de columnas Hora para separar IDA/VUELTA
     const allTimeCols: number[] = []
     for (let ri = 0; ri < rows.length; ri++) {
       if (headerRowSet.has(ri)) continue
@@ -810,9 +872,6 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       if (col - last > 30) rawClusters.push(col)
       else rawClusters[rawClusters.length - 1] = (last + col) / 2
     }
-
-    // ── 5. Separar clústeres en IDA (tabla izquierda) y VUELTA (tabla derecha) ─
-    const N = uniqueNums.length
 
     let splitIdx = -1
     let maxGap = 0
@@ -839,8 +898,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       idaClusters = filtered.length >= N ? filtered.slice(0, N) : rawClusters.slice(0, N)
     }
 
-    console.log(`[LH820] Pág ${pageNum}: IDA [${idaClusters.map(c => c.toFixed(0)).join(',')}]`)
-    console.log(`[LH820] Pág ${pageNum}: VUELTA [${vueltaClusters.map(c => c.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum} (${tableType}): IDA [${idaClusters.map(c => c.toFixed(0)).join(',')}]`)
+    console.log(`[LH820] Pág ${pageNum} (${tableType}): VUELTA [${vueltaClusters.map(c => c.toFixed(0)).join(',')}]`)
 
     // ── 6. Construir colBounds para IDA y VUELTA ──────────────────────────────
     type Bound = { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }
@@ -859,8 +918,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     ]
 
     if (allBounds.length === 0) {
-      console.warn(`[LH820] Pág ${pageNum}: sin columnas detectadas, página omitida`)
-      continue
+      console.warn(`[LH820] Pág ${pageNum} (${tableType}): sin columnas detectadas, tabla omitida`)
+      return
     }
 
     // Frontera izquierda de la zona de trenes
@@ -931,27 +990,117 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
         })
       }
     }
-  }
+  } else {
+    // Sentido fijo: procesar como una sola tabla con sentido fijo
+    const allTimeCols: number[] = []
+    for (let ri = 0; ri < rows.length; ri++) {
+      if (headerRowSet.has(ri)) continue
+      for (const c of rows[ri]) {
+        if (HORA_SCAN_RE.test(c.text)) allTimeCols.push(c.col)
+      }
+    }
+    allTimeCols.sort((a, b) => a - b)
 
-  const todos = Array.from(trenesMap.values())
-  const resultado = todos.filter(t => t.paradas.length > 0)
-  const sinParadas = todos.filter(t => t.paradas.length === 0).map(t => t.numero)
+    const rawClusters: number[] = []
+    for (const col of allTimeCols) {
+      const last = rawClusters[rawClusters.length - 1] ?? -Infinity
+      if (col - last > 30) rawClusters.push(col)
+      else rawClusters[rawClusters.length - 1] = (last + col) / 2
+    }
 
-  console.log(`[LH820] Trenes detectados: ${todos.length}`)
-  console.log(`[LH820] Con paradas: ${resultado.length} → ${resultado.map(t => t.numero).join(', ')}`)
-  if (sinParadas.length > 0) {
-    console.warn(`[LH820] Sin paradas (filtrados): ${sinParadas.join(', ')}`)
-  }
+    // Asumir que los clusters corresponden a los trenes en orden
+    const clusters = rawClusters.slice(0, N)
 
-  if (resultado.length === 0) {
-    console.warn('[LH820] Sin resultado. Muestra pág 1:')
-    const page1 = await pdf.getPage(1)
-    const tc = await page1.getTextContent()
-    ;(tc.items as { str?: string; transform?: number[] }[])
-      .filter(i => i.str?.trim()).slice(0, 40)
-      .forEach(i => console.warn(`  x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`))
+    console.log(`[LH820] Pág ${pageNum} (${tableType}): ${sentido} [${clusters.map(c => c.toFixed(0)).join(',')}]`)
+
+    // ── 6. Construir colBounds para el sentido fijo ──────────────────────────
+    type Bound = { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }
+
+    function makeBounds(clusters: number[], nums: string[], sentido: 'IDA' | 'VUELTA'): Bound[] {
+      return clusters.map((cc, i) => {
+        const prev = i > 0 ? clusters[i - 1] : cc - 300
+        const next = i < clusters.length - 1 ? clusters[i + 1] : cc + 300
+        return { num: nums[i] ?? '', colMin: (prev + cc) / 2, colMax: (cc + next) / 2, sentido }
+      }).filter(b => b.num !== '')
+    }
+
+    const allBounds: Bound[] = makeBounds(clusters, uniqueNums, sentido)
+
+    if (allBounds.length === 0) {
+      console.warn(`[LH820] Pág ${pageNum} (${tableType}): sin columnas detectadas, tabla omitida`)
+      return
+    }
+
+    // Frontera izquierda de la zona de trenes
+    const firstTrainCol = Math.min(...allBounds.map(b => b.colMin))
+    const minTrenCol = firstTrainCol
+
+    // ── 7. Procesar filas de datos ─────────────────────────────────────────────
+    for (let ri = 0; ri < rows.length; ri++) {
+      if (headerRowSet.has(ri)) continue
+      const row = rows[ri]
+
+      // Items a la izquierda de la primera columna de trenes
+      const stItems = row.filter(c => c.col < minTrenCol - 5)
+      if (stItems.length === 0) continue
+
+      // Separar: números decimales → sit_km, enteros → vmax, texto → estación
+      let estacion = ''
+      let sit_km: number | null = null
+      let vmax: number | null = null
+
+      for (const c of stItems) {
+        if (SITKM_RE.test(c.text)) {
+          sit_km = parseFloat(c.text)
+        } else if (VMAX_RE.test(c.text)) {
+          const v = parseInt(c.text, 10)
+          if (v >= 10 && v <= 220) vmax = v
+        } else if (/[A-Za-záéíóúüñÁÉÍÓÚÜÑ(]/.test(c.text)) {
+          estacion += (estacion ? ' ' : '') + c.text
+        }
+      }
+
+      estacion = estacion.trim()
+      if (!estacion || estacion.length < 2) continue
+
+      const apd = estacion.toUpperCase().includes('APD')
+
+      // Para cada columna, buscar la hora dentro de su rango Col
+      for (const { num, colMin, colMax, sentido: boundSentido } of allBounds) {
+        const tren = trenesMap.get(num)
+        if (!tren) continue
+
+        const trenItems = row.filter(c => c.col >= colMin && c.col <= colMax)
+        let hora: string | null = null
+        let comercial = false
+
+        for (const c of trenItems) {
+          if (COMERCIAL.has(c.text)) { comercial = true; continue }
+          const m = c.text.match(HORA_SCAN_RE)
+          if (m) hora = `${m[1].padStart(2, '0')}:${m[2]}`
+        }
+
+        if (!hora) continue
+
+        // Evitar paradas duplicadas consecutivas dentro del mismo sentido
+        const paradas = tren.paradas
+        const lastSameSentido = [...paradas].reverse().find(p => p.sentido === boundSentido)
+        if (lastSameSentido && lastSameSentido.hora === hora && lastSameSentido.estacion === estacion) continue
+
+        tren.paradas.push({
+          orden: paradas.length,
+          estacion,
+          hora,
+          comercial,
+          apd,
+          sentido: boundSentido,
+          sit_km,
+          vmax,
+        })
+      }
+    }
   }
-  return resultado
+}
 }
 
 // =============================================================
