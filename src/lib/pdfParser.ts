@@ -659,6 +659,163 @@ export async function parseCatalogoTurnos(file: File): Promise<ParsedCatalogo> {
 }
 
 // =============================================================
+// PARSER LH-820: LIBRO HORARIO AM 820 (ANEJO 5)
+// Port del parse_lh820.py usando pdf.js con extracción posicional
+// =============================================================
+
+export interface LH820Parada {
+  orden:      number
+  estacion:   string
+  hora:       string | null
+  comercial:  boolean
+  apd:        boolean
+}
+
+export interface LH820Tren {
+  numero:        string
+  tipo:          string
+  linea:         string | null
+  paradas:       LH820Parada[]
+  vigente_desde: string | null
+  notas:         string | null
+}
+
+function lh820TipoTren(numero: string): string {
+  const n = parseInt(numero, 10)
+  if (n >= 70400 && n <= 70499) return 'CRF_LAVIANA'
+  if (n >= 70500 && n <= 70599) return 'CRF_GIJON'
+  if (n >= 70700 && n <= 70899) return 'CERCANIAS'
+  if (n >= 71800 && n <= 71899) return 'MD_LLANES'
+  if (n >= 72100 && n <= 72199) return 'VACIO'
+  return 'OTRO'
+}
+
+/**
+ * Extrae trenes del PDF LH-820 (Anejo 5) usando extracción posicional de pdf.js.
+ * Cada página tiene columnas de trenes (números 7XXXX) con horarios por estación.
+ */
+export async function parseLH820(file: File): Promise<LH820Tren[]> {
+  const arrayBuffer = await file.arrayBuffer()
+  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+  const pdf = await loadingTask.promise
+
+  // Mapa numero→tren (acumula paradas de múltiples páginas)
+  const trenesMap = new Map<string, LH820Tren>()
+
+  const TREN_RE    = /^7\d{4}$/
+  const HORA_RE    = /^(\d{1,2})[.:,](\d{2})$/
+  const COMERCIAL  = new Set(['●', '•', '·', '|', 'l', 'o', '○'])
+  // Tolerancia en puntos PDF para agrupar items en la misma fila
+  const ROW_TOL  = 3
+  // Tolerancia horizontal para asociar un item a la columna de un tren
+  const COL_TOL  = 55
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page       = await pdf.getPage(pageNum)
+    const textContent = await page.getTextContent()
+
+    // Extraer items con posición (x, y, text)
+    const items: { x: number; y: number; text: string }[] = []
+    for (const raw of textContent.items) {
+      const item = raw as { str: string; transform: number[] }
+      const text = item.str?.trim()
+      if (!text) continue
+      items.push({ x: item.transform[4], y: item.transform[5], text })
+    }
+    if (items.length === 0) continue
+
+    // Agrupar por fila (Y redondeado a múltiplos de ROW_TOL)
+    const rowMap = new Map<number, { x: number; text: string }[]>()
+    for (const it of items) {
+      const ry = Math.round(it.y / ROW_TOL) * ROW_TOL
+      if (!rowMap.has(ry)) rowMap.set(ry, [])
+      rowMap.get(ry)!.push({ x: it.x, text: it.text })
+    }
+
+    // Ordenar filas de arriba a abajo (Y mayor = más arriba en espacio PDF)
+    const rows = Array.from(rowMap.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([, cells]) => cells.sort((a, b) => a.x - b.x))
+
+    // Buscar fila de cabecera (contiene al menos un 7XXXX)
+    let headerIdx = -1
+    let trenCols: { num: string; x: number }[] = []
+
+    for (let ri = 0; ri < rows.length; ri++) {
+      const matches = rows[ri].filter(c => TREN_RE.test(c.text))
+      if (matches.length >= 1) {
+        headerIdx = ri
+        trenCols  = matches.map(c => ({ num: c.text, x: c.x }))
+        break
+      }
+    }
+    if (headerIdx === -1) continue
+
+    // Registrar trenes nuevos
+    for (const { num } of trenCols) {
+      if (!trenesMap.has(num)) {
+        trenesMap.set(num, {
+          numero:        num,
+          tipo:          lh820TipoTren(num),
+          linea:         null,
+          paradas:       [],
+          vigente_desde: null,
+          notas:         null,
+        })
+      }
+    }
+
+    const minTrenX = Math.min(...trenCols.map(t => t.x))
+
+    // Procesar filas de datos (debajo del encabezado)
+    for (let ri = headerIdx + 1; ri < rows.length; ri++) {
+      const row = rows[ri]
+
+      // Items a la izquierda de las columnas de trenes → nombre de estación
+      const stItems = row.filter(c => c.x < minTrenX - 5)
+      if (stItems.length === 0) continue
+
+      const estacion = stItems.map(c => c.text).join(' ').trim()
+      // Descartar filas que no parezcan estación (números puros, etc.)
+      if (!estacion || estacion.length < 2 || /^\d+([.,]\d+)?$/.test(estacion)) continue
+
+      const apd = estacion.includes('APD')
+
+      // Para cada columna de tren, buscar su hora en esta fila
+      for (const { num, x: tx } of trenCols) {
+        const tren       = trenesMap.get(num)!
+        const trenItems  = row.filter(c => Math.abs(c.x - tx) < COL_TOL)
+
+        let hora:      string | null = null
+        let comercial  = false
+
+        for (const c of trenItems) {
+          if (COMERCIAL.has(c.text)) { comercial = true; continue }
+          const m = c.text.match(HORA_RE)
+          if (m) hora = `${m[1].padStart(2, '0')}:${m[2]}`
+        }
+
+        if (!hora) continue
+
+        // Evitar paradas duplicadas consecutivas
+        const last = tren.paradas[tren.paradas.length - 1]
+        if (last && last.hora === hora && last.estacion === estacion) continue
+
+        tren.paradas.push({
+          orden:     tren.paradas.length,
+          estacion,
+          hora,
+          comercial,
+          apd,
+        })
+      }
+    }
+  }
+
+  return Array.from(trenesMap.values()).filter(t => t.paradas.length > 0)
+}
+
+// =============================================================
 // DETECCIÓN AUTOMÁTICA DE TIPO DE PDF
 // =============================================================
 

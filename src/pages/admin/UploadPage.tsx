@@ -2,14 +2,14 @@ import { useState, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { parseMaquinistaAsignacion, parseCatalogoTurnos } from '@/lib/pdfParser'
+import { parseMaquinistaAsignacion, parseCatalogoTurnos, parseLH820 } from '@/lib/pdfParser'
 import { getTurnoMeta } from '@/lib/turnoNomenclatura'
 import {
   Upload, FileText, X, CheckCircle, AlertCircle,
-  Loader2, Info, User, ChevronRight,
+  Loader2, Info, User, ChevronRight, Train,
 } from 'lucide-react'
 
-type UploadTipo = 'catalogo_turnos' | 'asignacion_maquinista'
+type UploadTipo = 'catalogo_turnos' | 'asignacion_maquinista' | 'lh_trenes'
 
 // idle → seleccionado → analizando → confirmacion → guardando → done | error
 type FlowStep = 'idle' | 'analizando' | 'confirmacion' | 'guardando' | 'done' | 'error'
@@ -74,13 +74,17 @@ export default function UploadPage() {
     parsedDataRef.current = null
   }
 
-  // ── Paso 1: Analizar el PDF ──────────────────────────────────
+  // ── Paso 1: Analizar el PDF / JSON ──────────────────────────
   async function handleAnalizar() {
     if (!file || !profile) return
 
     if (tipo === 'catalogo_turnos') {
-      // El catálogo no necesita confirmación — importar directo
       await processCatalogo()
+      return
+    }
+
+    if (tipo === 'lh_trenes') {
+      await processLhTrenes()
       return
     }
 
@@ -203,6 +207,74 @@ export default function UploadPage() {
     }
   }
 
+  // ── LH-820: parsear PDF y mostrar confirmación ───────────────
+  async function processLhTrenes() {
+    if (!file || !profile) return
+    try {
+      setStep('analizando')
+      const trenes = await parseLH820(file)
+
+      if (trenes.length === 0) {
+        setStep('error')
+        setErrorMsg('No se encontraron trenes en el PDF. Comprueba que es el Anejo 5 del LH-820.')
+        return
+      }
+
+      // Reutilizamos maquinistaInfo para mostrar el resumen de LH-820
+      setMaquinistaInfo({
+        profileId:    '',
+        nombre:       `${trenes.length} trenes extraídos`,
+        apellidos:    '',
+        matricula:    '',
+        totalDias:    trenes.reduce((s, t) => s + t.paradas.length, 0),
+        year:         new Date().getFullYear(),
+        esMismoUsuario: false,
+      })
+      // Guardamos los trenes parseados para la confirmación
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(parsedDataRef as React.MutableRefObject<any>).current = { __lh820: trenes }
+      setStep('confirmacion')
+    } catch (e) {
+      setStep('error')
+      setErrorMsg(e instanceof Error ? e.message : 'Error leyendo el PDF')
+    }
+  }
+
+  // ── LH-820: confirmar e importar ─────────────────────────────
+  async function confirmarLhTrenes() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const trenes = (parsedDataRef.current as any)?.__lh820
+    if (!trenes || !profile) return
+
+    try {
+      setStep('guardando')
+      const BATCH = 50
+      let total = 0
+      for (let i = 0; i < trenes.length; i += BATCH) {
+        const chunk = trenes.slice(i, i + BATCH)
+        const { error: err } = await supabase
+          .from('lh_trenes')
+          .upsert(chunk, { onConflict: 'numero' })
+        if (err) throw new Error('Error guardando trenes: ' + err.message)
+        total += chunk.length
+        setProgressMsg(`Guardando… ${total} / ${trenes.length} trenes`)
+      }
+
+      await supabase.from('pdf_uploads').insert({
+        filename: file!.name, tipo: 'lh_trenes', storage_path: '',
+        estado: 'completado', periodo_anio: new Date().getFullYear(),
+        subido_por: profile.id, registros_creados: total,
+        log_texto: `LH-820 importado desde PDF. ${total} trenes, ${maquinistaInfo?.totalDias ?? 0} paradas.`,
+      })
+
+      setRecordsCreated(total)
+      setStep('done')
+    } catch (e) {
+      setStep('error')
+      setErrorMsg(e instanceof Error ? e.message : 'Error inesperado')
+    }
+  }
+
   // ── Catálogo de turnos ───────────────────────────────────────
   async function processCatalogo() {
     if (!file || !profile) return
@@ -292,22 +364,26 @@ export default function UploadPage() {
     <div className="flex flex-col gap-4 px-4 pt-4 pb-8">
 
       {/* Tipo */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col gap-3">
-        <h3 className="text-sm font-bold text-gray-800">Tipo de documento</h3>
-        <div className="grid grid-cols-2 gap-2">
-          {(['asignacion_maquinista', 'catalogo_turnos'] as UploadTipo[]).map((t) => (
+      <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-4 flex flex-col gap-3">
+        <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Tipo de documento</h3>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { id: 'asignacion_maquinista', label: 'Asignación maquinista', desc: 'Desarrollo anual de un maquinista' },
+            { id: 'catalogo_turnos',       label: 'Catálogo de turnos',    desc: 'Definición de turnos y trenes'   },
+            { id: 'lh_trenes',             label: 'Detalle trenes LH-820', desc: 'PDF Anejo 5 – horarios por estación'},
+          ] as { id: UploadTipo; label: string; desc: string }[]).map(({ id: t, label, desc }) => (
             <button key={t} onClick={() => { setTipo(t); removeFile() }}
               className={`p-3 rounded-xl border-2 text-left transition-all
-                ${tipo === t ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50 hover:border-gray-300'}`}
+                ${tipo === t
+                  ? 'border-red-500 bg-red-50 dark:bg-red-900/20'
+                  : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:border-gray-300'}`}
             >
-              <FileText className={`w-5 h-5 mb-1.5 ${tipo === t ? 'text-red-600' : 'text-gray-400'}`} />
-              <p className={`text-xs font-semibold ${tipo === t ? 'text-red-700' : 'text-gray-700'}`}>
-                {t === 'catalogo_turnos' ? 'Catálogo de turnos' : 'Asignación de maquinista'}
+              <FileText className={`w-4 h-4 mb-1.5 ${tipo === t ? 'text-red-600' : 'text-gray-400 dark:text-gray-500'}`} />
+              <p className={`text-[11px] font-semibold leading-tight ${tipo === t ? 'text-red-700 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                {label}
               </p>
-              <p className="text-[10px] text-gray-400 mt-0.5">
-                {t === 'catalogo_turnos'
-                  ? 'Definición de todos los turnos y sus trenes'
-                  : 'Desarrollo anual de un maquinista concreto'}
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-tight">
+                {desc}
               </p>
             </button>
           ))}
@@ -316,23 +392,32 @@ export default function UploadPage() {
 
       {/* Año (solo para catálogo) */}
       {tipo === 'catalogo_turnos' && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <label className="text-xs font-medium text-gray-600 block mb-1.5">Año del horario</label>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm p-4">
+          <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1.5">Año del horario</label>
           <select value={anio} onChange={e => setAnio(Number(e.target.value))}
-            className="w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl
-              focus:outline-none focus:ring-2 focus:ring-red-400">
+            className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600
+              text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-red-400">
             {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
       )}
 
-      {/* Info asignación */}
+      {/* Info según tipo */}
       {tipo === 'asignacion_maquinista' && (
-        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl p-4 flex gap-3">
           <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-800 leading-relaxed">
+          <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
             La matrícula del maquinista se leerá automáticamente del PDF.
             El sistema identificará a quién pertenecen los turnos antes de importarlos.
+          </p>
+        </div>
+      )}
+      {tipo === 'lh_trenes' && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl p-4 flex gap-3">
+          <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
+            Sube directamente el PDF del <strong>Libro Horario AM 820, Anejo 5</strong>.
+            La app extraerá los horarios de trenes automáticamente (números 7XXXX con paradas y horas).
           </p>
         </div>
       )}
@@ -344,9 +429,9 @@ export default function UploadPage() {
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           onClick={() => !file && fileInputRef.current?.click()}
-          className={`relative bg-white rounded-2xl border-2 border-dashed p-8
+          className={`relative bg-white dark:bg-gray-800 rounded-2xl border-2 border-dashed p-8
             flex flex-col items-center justify-center gap-3 transition-all
-            ${isDragging ? 'border-red-400 bg-red-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}
+            ${isDragging ? 'border-red-400 bg-red-50' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}
             ${file ? 'cursor-default' : 'cursor-pointer'}`}
         >
           <input ref={fileInputRef} type="file" accept="application/pdf"
@@ -381,45 +466,62 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* ── CONFIRMACIÓN: quién es el maquinista ── */}
+      {/* ── CONFIRMACIÓN ── */}
       {step === 'confirmacion' && maquinistaInfo && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">PDF listo para importar</p>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border-b border-gray-100 dark:border-gray-700">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              PDF listo para importar
+            </p>
           </div>
 
-          {/* Destinatario */}
-          <div className={`mx-4 mt-4 mb-2 p-4 rounded-xl border-2 flex items-center gap-3
-            ${maquinistaInfo.esMismoUsuario
-              ? 'border-amber-300 bg-amber-50'
-              : 'border-blue-200 bg-blue-50'}`}
-          >
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold text-sm
-              ${maquinistaInfo.esMismoUsuario ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'}`}>
-              {maquinistaInfo.nombre[0]}{maquinistaInfo.apellidos[0]}
+          {tipo === 'lh_trenes' ? (
+            /* ── Resumen LH-820 ── */
+            <div className="mx-4 mt-4 mb-2 p-4 rounded-xl border-2 border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-green-200 dark:bg-green-800 flex items-center justify-center shrink-0">
+                <Train className="w-5 h-5 text-green-700 dark:text-green-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 dark:text-white">{maquinistaInfo.nombre}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{maquinistaInfo.totalDias} paradas en total</p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-gray-900">
-                {maquinistaInfo.nombre} {maquinistaInfo.apellidos}
-              </p>
-              <p className="text-xs text-gray-500">Matrícula: {maquinistaInfo.matricula}</p>
-              {maquinistaInfo.esMismoUsuario && (
-                <p className="text-xs font-semibold text-amber-700 mt-0.5">
-                  ⚠️ Este es tu propio usuario como maquinista
+          ) : (
+            /* ── Destinatario maquinista ── */
+            <div className={`mx-4 mt-4 mb-2 p-4 rounded-xl border-2 flex items-center gap-3
+              ${maquinistaInfo.esMismoUsuario
+                ? 'border-amber-300 bg-amber-50 dark:bg-amber-900/20'
+                : 'border-blue-200 bg-blue-50 dark:bg-blue-900/20'}`}
+            >
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold text-sm
+                ${maquinistaInfo.esMismoUsuario ? 'bg-amber-200 text-amber-800' : 'bg-blue-200 text-blue-800'}`}>
+                {maquinistaInfo.nombre[0]}{maquinistaInfo.apellidos[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900 dark:text-white">
+                  {maquinistaInfo.nombre} {maquinistaInfo.apellidos}
                 </p>
-              )}
+                <p className="text-xs text-gray-500 dark:text-gray-400">Matrícula: {maquinistaInfo.matricula}</p>
+                {maquinistaInfo.esMismoUsuario && (
+                  <p className="text-xs font-semibold text-amber-700 mt-0.5">
+                    ⚠️ Este es tu propio usuario como maquinista
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Resumen */}
+          {/* Resumen numérico */}
           <div className="px-4 pb-4 grid grid-cols-2 gap-2 mt-2">
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-xl font-bold text-gray-900">{maquinistaInfo.totalDias}</p>
-              <p className="text-xs text-gray-500">días en el PDF</p>
+            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-gray-900 dark:text-white">{maquinistaInfo.totalDias}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {tipo === 'lh_trenes' ? 'paradas' : 'días en el PDF'}
+              </p>
             </div>
-            <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-xl font-bold text-gray-900">{maquinistaInfo.year}</p>
-              <p className="text-xs text-gray-500">año del horario</p>
+            <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 text-center">
+              <p className="text-xl font-bold text-gray-900 dark:text-white">{maquinistaInfo.year}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">año del horario</p>
             </div>
           </div>
 
@@ -429,7 +531,8 @@ export default function UploadPage() {
                 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
               <X className="w-4 h-4" /> Cancelar
             </button>
-            <button onClick={handleConfirmarImportar}
+            <button
+              onClick={tipo === 'lh_trenes' ? confirmarLhTrenes : handleConfirmarImportar}
               className="flex-1 py-3 rounded-xl bg-red-600 text-white text-sm font-semibold
                 hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
               <CheckCircle className="w-4 h-4" />
@@ -480,7 +583,9 @@ export default function UploadPage() {
             className="flex-1 py-3.5 rounded-2xl bg-red-600 text-white text-sm font-semibold
               hover:bg-red-700 transition-colors flex items-center justify-center gap-2">
             <Upload className="w-4 h-4" />
-            {tipo === 'catalogo_turnos' ? 'Importar catálogo' : 'Analizar PDF'}
+            {tipo === 'catalogo_turnos' ? 'Importar catálogo'
+              : tipo === 'lh_trenes'    ? 'Importar trenes LH-820'
+              : 'Analizar PDF'}
           </button>
         </div>
       )}

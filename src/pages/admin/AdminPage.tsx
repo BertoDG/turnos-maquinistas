@@ -32,23 +32,26 @@ export default function AdminPage() {
 
   async function loadData() {
     setLoadingUploads(true)
-
-    const [{ data: uploadData }, { data: mqData }] = await Promise.all([
-      supabase
-        .from('pdf_uploads')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20),
-      supabase
-        .from('profiles')
-        .select('*')
-        .eq('activo', true)
-        .order('apellidos'),
-    ])
-
-    setUploads((uploadData ?? []) as PdfUpload[])
-    setMaquinistas((mqData ?? []) as Profile[])
-    setLoadingUploads(false)
+    try {
+      const [{ data: uploadData }, { data: mqData }] = await Promise.all([
+        supabase
+          .from('pdf_uploads')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20),
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('activo', true)
+          .order('apellidos'),
+      ])
+      setUploads((uploadData ?? []) as PdfUpload[])
+      setMaquinistas((mqData ?? []) as Profile[])
+    } catch {
+      // silent — data stays empty
+    } finally {
+      setLoadingUploads(false)
+    }
   }
 
   // Suscripción realtime al estado de los uploads
@@ -159,7 +162,7 @@ export default function AdminPage() {
         ) : (
           <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-700">
             {uploads.map((upload) => {
-              const conf = ESTADO_CONFIG[upload.estado]
+              const conf = ESTADO_CONFIG[upload.estado as keyof typeof ESTADO_CONFIG] ?? ESTADO_CONFIG.pendiente
               const Icon = conf.icon
               return (
                 <div key={upload.id} className="px-4 py-3 flex gap-3 items-center">
