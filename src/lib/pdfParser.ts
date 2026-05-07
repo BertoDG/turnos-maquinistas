@@ -712,29 +712,32 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
   // Tolerancia Y para agrupar items de la misma fila visual (puntos PDF)
   const ROW_TOL = 4
-  // Tolerancia X para asociar un item a una columna de tren
-  const COL_TOL = 60
 
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page        = await pdf.getPage(pageNum)
     const textContent = await page.getTextContent()
 
-    // Extraer items con posición (x, y, text)
-    const items: { x: number; y: number; text: string }[] = []
+    // Extraer items con posición (x, y, text, width)
+    const items: { x: number; y: number; text: string; width: number }[] = []
     for (const raw of textContent.items) {
-      const item = raw as { str?: string; transform?: number[] }
+      const item = raw as { str?: string; transform?: number[]; width?: number }
       const text = item.str?.trim()
       if (!text || !item.transform) continue
-      items.push({ x: item.transform[4], y: item.transform[5], text })
+      items.push({
+        x:     item.transform[4],
+        y:     item.transform[5],
+        text,
+        width: item.width ?? 0,
+      })
     }
     if (items.length === 0) continue
 
     // Agrupar por fila (Y redondeado a múltiplos de ROW_TOL)
-    const rowMap = new Map<number, { x: number; text: string }[]>()
+    const rowMap = new Map<number, { x: number; text: string; width: number }[]>()
     for (const it of items) {
       const ry = Math.round(it.y / ROW_TOL) * ROW_TOL
       if (!rowMap.has(ry)) rowMap.set(ry, [])
-      rowMap.get(ry)!.push({ x: it.x, text: it.text })
+      rowMap.get(ry)!.push({ x: it.x, text: it.text, width: it.width })
     }
 
     // Ordenar filas de arriba a abajo (Y mayor = más arriba en PDF)
@@ -742,17 +745,36 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       .sort((a, b) => b[0] - a[0])
       .map(([, cells]) => cells.sort((a, b) => a.x - b.x))
 
+
     // ── Buscar fila de cabecera con números de tren 7XXXX ──────────────────────
-    // Buscamos en CADA texto del item, no solo en items exactos.
-    // Esto maneja casos donde pdf.js agrupa varios tokens en un solo item.
+    // Buscamos dentro de cada texto del item (matchAll), no solo items exactos.
+    // Cuando un item contiene múltiples trenes (p.ej. "70400 70402"), estimamos
+    // la posición X de cada número interpolando dentro del ancho del item.
     let headerIdx = -1
     let trenCols: { num: string; x: number }[] = []
 
     for (let ri = 0; ri < rows.length; ri++) {
       const found: { num: string; x: number }[] = []
       for (const c of rows[ri]) {
-        for (const m of c.text.matchAll(TREN_SCAN_RE)) {
-          found.push({ num: m[1], x: c.x })
+        const matches = [...c.text.matchAll(TREN_SCAN_RE)]
+        if (matches.length === 0) continue
+
+        // Si el item contiene VARIOS números de tren (p.ej. "70407 70409 70411"
+        // en un solo str), debemos estimar la X de cada uno interpolando dentro
+        // del ancho del item. Sin esto, todos quedarían con la misma X y los
+        // límites de columna del tren central colapsarían a anchura cero.
+        if (matches.length === 1 || c.width <= 0) {
+          // Caso simple: un solo match o sin info de anchura → usar x del item
+          for (const m of matches) {
+            found.push({ num: m[1], x: c.x })
+          }
+        } else {
+          // Caso múltiple: interpolar X según la posición del carácter en el texto
+          const textLen = c.text.length
+          for (const m of matches) {
+            const charFraction = (m.index ?? 0) / textLen
+            found.push({ num: m[1], x: c.x + charFraction * c.width })
+          }
         }
       }
       if (found.length >= 1) {
@@ -767,7 +789,8 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       continue
     }
 
-    console.log(`[LH820] Pág ${pageNum}: trenes ${trenCols.map(t => t.num).join(', ')}`)
+    console.log(`[LH820] Pág ${pageNum}: trenes encontrados:`,
+      trenCols.map(t => `${t.num}@x=${t.x.toFixed(1)}`).join(' '))
 
     // Registrar trenes nuevos
     for (const { num } of trenCols) {
@@ -783,13 +806,32 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
       }
     }
 
-    const minTrenX = Math.min(...trenCols.map(t => t.x))
+    // ── Calcular límites X de cada tren por puntos medios ─────────────────────
+    // Cada tren ocupa desde el punto medio con el tren anterior hasta el punto
+    // medio con el tren siguiente. Esto es mucho más robusto que una tolerancia
+    // fija, ya que el número de tren en la cabecera se centra sobre las
+    // sub-columnas C, Hora, T y puede estar lejos de los tiempos reales.
+    const sortedCols = [...trenCols].sort((a, b) => a.x - b.x)
+    const colBounds = sortedCols.map((col, i) => {
+      const prevX = i > 0 ? sortedCols[i - 1].x : col.x - 300
+      const nextX = i < sortedCols.length - 1 ? sortedCols[i + 1].x : col.x + 300
+      return {
+        num:  col.num,
+        xMin: (prevX + col.x) / 2,
+        xMax: (col.x + nextX) / 2,
+      }
+    })
+
+    const minTrenX = sortedCols[0].x
+
+    console.log(`[LH820] Pág ${pageNum} límites de columnas:`,
+      colBounds.map(b => `${b.num}=[${b.xMin.toFixed(0)},${b.xMax.toFixed(0)}]`).join(' '))
 
     // ── Procesar filas de datos (debajo del encabezado) ────────────────────────
     for (let ri = headerIdx + 1; ri < rows.length; ri++) {
       const row = rows[ri]
 
-      // Items claramente a la izquierda de las columnas de trenes → estación
+      // Items a la izquierda de la primera columna de trenes → estación
       const stItems = row.filter(c => c.x < minTrenX - 5)
       if (stItems.length === 0) continue
 
@@ -799,18 +841,16 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
       const apd = estacion.toUpperCase().includes('APD')
 
-      // Para cada tren, buscar su hora en esta fila
-      for (const { num, x: tx } of trenCols) {
+      // Para cada tren, buscar su hora dentro de su rango X exclusivo
+      for (const { num, xMin, xMax } of colBounds) {
         const tren      = trenesMap.get(num)!
-        // Items dentro de la columna de este tren (±COL_TOL)
-        const trenItems = row.filter(c => Math.abs(c.x - tx) < COL_TOL)
+        const trenItems = row.filter(c => c.x >= xMin && c.x <= xMax)
 
         let hora:     string | null = null
         let comercial = false
 
         for (const c of trenItems) {
           if (COMERCIAL.has(c.text)) { comercial = true; continue }
-          // Buscar hora dentro del texto (no solo match exacto)
           const m = c.text.match(HORA_SCAN_RE)
           if (m) hora = `${m[1].padStart(2, '0')}:${m[2]}`
         }
@@ -832,16 +872,28 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
   }
 
-  const resultado = Array.from(trenesMap.values()).filter(t => t.paradas.length > 0)
-  console.log(`[LH820] Resultado: ${resultado.length} trenes con paradas`)
+  const todos     = Array.from(trenesMap.values())
+  const resultado = todos.filter(t => t.paradas.length > 0)
+  const sinParadas = todos.filter(t => t.paradas.length === 0).map(t => t.numero)
+
+  console.log(`[LH820] Trenes detectados en cabeceras: ${todos.length}`)
+  console.log(`[LH820] Con paradas: ${resultado.length} → ${resultado.map(t => t.numero).join(', ')}`)
+  if (sinParadas.length > 0) {
+    console.warn(`[LH820] Sin paradas (filtrados): ${sinParadas.join(', ')}`)
+    console.warn('[LH820] Estos trenes se vieron en cabecera pero no se asociaron tiempos.')
+    console.warn('[LH820] Revisa los logs "límites de columnas" y comprueba que los X de los')
+    console.warn('[LH820] datos (hora) caen dentro del rango xMin-xMax de cada tren.')
+  }
+
   if (resultado.length === 0) {
-    // Mostrar muestra de texto extraído para diagnóstico
-    console.warn('[LH820] No se encontraron trenes. Muestra de items extraídos de pág 1:')
+    console.warn('[LH820] Sin resultado. Muestra de texto de pág 1:')
     const page1 = await pdf.getPage(1)
     const tc    = await page1.getTextContent()
-    const sample = (tc.items as { str?: string }[])
-      .map(i => i.str?.trim()).filter(Boolean).slice(0, 30)
-    console.warn(sample)
+    const sample = (tc.items as { str?: string; transform?: number[] }[])
+      .filter(i => i.str?.trim())
+      .slice(0, 40)
+      .map(i => `x=${i.transform?.[4]?.toFixed(0)} "${i.str?.trim()}"`)
+    console.warn(sample.join('\n'))
   }
   return resultado
 }
