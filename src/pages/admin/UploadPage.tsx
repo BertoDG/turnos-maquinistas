@@ -246,35 +246,40 @@ export default function UploadPage() {
           return
         }
       } else {
-        // PDF: comprimir y enviar directamente al endpoint Python del servidor
-        setProgressMsg('Preparando PDF…')
-        const rawBuffer = await file.arrayBuffer()
+        // PDF: subir a Supabase Storage y procesar en el servidor con pypdfium2
+        const tempPath = `lh820-temp/${Date.now()}_${file.name}`
 
-        // Comprimir con deflate para reducir el tamaño antes de enviar
-        const cs = new CompressionStream('deflate-raw')
-        const writer = cs.writable.getWriter()
-        writer.write(new Uint8Array(rawBuffer))
-        writer.close()
-        const compressed = await new Response(cs.readable).arrayBuffer()
+        setProgressMsg('Subiendo PDF…')
+        const { error: uploadErr } = await supabase.storage
+          .from('pdfs-renfe')
+          .upload(tempPath, file, { contentType: 'application/pdf', upsert: true })
 
-        setProgressMsg('Procesando PDF en el servidor…')
-        const apiRes = await fetch('/api/parse-lh820', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Compressed': 'deflate-raw',
-          },
-          body: compressed,
-        })
-
-        if (!apiRes.ok) {
-          const err = await apiRes.json().catch(() => ({ error: `HTTP ${apiRes.status}` }))
+        if (uploadErr) {
           setStep('error')
-          setErrorMsg(`Error del servidor: ${err.error ?? apiRes.status}`)
+          setErrorMsg(`Error subiendo el PDF: ${uploadErr.message}`)
           return
         }
 
-        trenes = await apiRes.json()
+        setProgressMsg('Procesando PDF en el servidor…')
+        let apiRes: Response
+        try {
+          apiRes = await fetch('/api/parse-lh820', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bucket: 'pdfs-renfe', path: tempPath }),
+          })
+        } finally {
+          await supabase.storage.from('pdfs-renfe').remove([tempPath])
+        }
+
+        if (!apiRes!.ok) {
+          const err = await apiRes!.json().catch(() => ({ error: `HTTP ${apiRes!.status}` }))
+          setStep('error')
+          setErrorMsg(`Error del servidor: ${err.error ?? apiRes!.status}`)
+          return
+        }
+
+        trenes = await apiRes!.json()
         if (!Array.isArray(trenes)) {
           setStep('error')
           setErrorMsg('Respuesta inesperada del servidor.')
