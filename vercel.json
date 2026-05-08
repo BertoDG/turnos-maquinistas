@@ -1,5 +1,11 @@
 {
+  "functions": {
+    "api/parse-lh820.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
