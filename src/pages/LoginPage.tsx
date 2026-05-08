@@ -149,6 +149,7 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
   onSuccess: () => void
 }) {
   const [matricula,     setMatricula]     = useState('')
+  const [email,         setEmail]         = useState('')
   const [nombre,        setNombre]        = useState('')
   const [apellidos,     setApellidos]     = useState('')
   const [telefono,      setTelefono]      = useState('')
@@ -159,13 +160,17 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
   const [error,         setError]         = useState<string | null>(null)
   const [loading,       setLoading]       = useState(false)
 
-  const canSubmit = matricula.trim() && nombre.trim() && apellidos.trim() && password && confirm
+  const canSubmit = matricula.trim() && email.trim() && nombre.trim() && apellidos.trim() && password && confirm
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
 
     if (!canSubmit) return
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Introduce un email válido.')
+      return
+    }
     if (password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres.')
       return
@@ -178,6 +183,7 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
     setLoading(true)
     const { error: err } = await signUp({
       matricula,
+      email,
       nombre,
       apellidos,
       password,
@@ -223,6 +229,23 @@ function RegisterForm({ onBack, signUp, onSuccess }: {
             disabled={loading}
           />
           <p className="text-xs text-gray-400 mt-1">Será tu nombre de usuario para iniciar sesión</p>
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Email <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="tu@email.com"
+            className={INPUT_CLASS}
+            disabled={loading}
+          />
+          <p className="text-xs text-gray-400 mt-1">Para recuperar tu contraseña si la olvidas</p>
         </div>
 
         {/* Nombre y Apellidos */}

@@ -5,6 +5,7 @@ import type { Profile } from '@/types'
 
 export interface RegisterData {
   matricula:     string
+  email:         string
   nombre:        string
   apellidos:     string
   password:      string
@@ -152,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   async function signUp(data: RegisterData): Promise<{ error: string | null }> {
     try {
-      const email = `${data.matricula.trim().toLowerCase()}@turnosmaq.app`
+      const email = data.email.trim().toLowerCase()
 
       const { error } = await supabase.auth.signUp({
         email,
