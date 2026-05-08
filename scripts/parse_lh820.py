@@ -32,6 +32,7 @@ from typing import Optional
 RE_TREN  = re.compile(r'\b(7\d{4})\b')
 RE_HORA  = re.compile(r'(?<!\d)(\d{1,2})\.(\d{2})(?!\d)')  # H.MM → HH:MM
 RE_SITKM = re.compile(r'\b(\d{1,3})\.\s?(\d)\b')           # 49. 7 → 49.7
+RE_VMAX  = re.compile(r'^\s{0,8}(\d{2,3})(?:\s|$)')        # entero al inicio de línea
 RE_SKIP  = re.compile(
     r'(Bloqueo|Dependencia|VM.x|Sit\s*Km|C\s+Hora|HORARIO\s*820|P.g\s+[IVX]'
     r'|Tipo:|CERCANIAS|MATERIAL\s+VACIO|MEDIA\s+DISTANCIA)',
@@ -69,6 +70,21 @@ def parse_sitkm(chunk: str) -> Optional[float]:
         if 0 <= v <= 600:
             return v
     return None
+
+
+# Velocidades máximas válidas en la red RENFE (múltiplos de 5, 10-220 km/h)
+_VALID_VMAX = {v for v in range(10, 225, 5)}
+
+def parse_vmax(line: str) -> Optional[int]:
+    """Extrae la velocidad máxima de la columna izquierda del LH-820.
+    Son enteros sin decimal al inicio de línea (ej: 50, 100, 70).
+    Solo se aceptan valores múltiplo de 5 entre 10 y 220 km/h.
+    """
+    m = RE_VMAX.match(line)
+    if not m:
+        return None
+    v = int(m.group(1))
+    return v if v in _VALID_VMAX else None
 
 
 def extract_station(region: str) -> Optional[str]:
@@ -112,7 +128,8 @@ def _is_comercial(line: str, hora: str, col: int) -> bool:
 
 
 def _add_parada(tren: dict, estacion: str, hora: str,
-                sit_km: Optional[float], comercial: bool, apd: bool):
+                sit_km: Optional[float], vmax: Optional[int],
+                comercial: bool, apd: bool):
     paradas = tren['paradas']
     if any(p['estacion'] == estacion and p['hora'] == hora for p in paradas):
         return
@@ -121,7 +138,7 @@ def _add_parada(tren: dict, estacion: str, hora: str,
         'estacion': estacion,
         'hora': hora,
         'sit_km': sit_km,
-        'vmax': None,
+        'vmax': vmax,
         'comercial': comercial,
         'apd': apd,
     })
@@ -194,7 +211,7 @@ def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
             print(f'  Seccion {sec_num+1}: trenes={trains}')
 
         # Estado de continuación de estación (para EL BERRÓN / POLA DE SIERO)
-        state: dict = {'station': None, 'sitkm': None, 'cont_rows': 0}
+        state: dict = {'station': None, 'sitkm': None, 'cont_rows': 0, 'vmax': None}
 
         for line in lines[tipo_idx + 1:section_end]:
             _process_line(line, trains, n_trains, state, trenes_map, verbose)
@@ -207,6 +224,12 @@ def _process_line(line: str, trains: list, n_trains: int,
         return
     if RE_SKIP.search(line):
         return
+
+    # VMax: columna más a la izquierda, persiste hasta que cambia.
+    # Se extrae ANTES de cualquier return para no perder el valor.
+    vmax = parse_vmax(line)
+    if vmax is not None:
+        state['vmax'] = vmax
 
     # Sit_km de la región izquierda (primeros 15 chars)
     sitkm = parse_sitkm(line[:15])
@@ -258,9 +281,9 @@ def _process_line(line: str, trains: list, n_trains: int,
             comercial = _is_comercial(line, hora, col)
             apd = '(APD)' in active_station
             _add_parada(trenes_map[num], active_station, hora,
-                        active_sitkm, comercial, apd)
+                        active_sitkm, state.get('vmax'), comercial, apd)
             if verbose:
-                print(f'    {num} @ {active_station}: {hora} km={active_sitkm}')
+                print(f'    {num} @ {active_station}: {hora} km={active_sitkm} vmax={state.get("vmax")}')
 
 
 # ── Parser principal ───────────────────────────────────────────────────────────
