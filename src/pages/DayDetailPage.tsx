@@ -573,7 +573,10 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
   onTrainTap?: () => void
 }) {
   return (
-    <div className="flex gap-3 px-4 py-3.5">
+    <div
+      className={cn('flex gap-3 px-4 py-3.5', onTrainTap && 'cursor-pointer active:bg-gray-50 dark:active:bg-gray-800/60 transition-colors')}
+      onClick={onTrainTap}
+    >
       <div className="flex flex-col items-center">
         <div className="w-3 h-3 rounded-full border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 shrink-0 mt-0.5" />
         {!isLast && <div className="flex-1 w-0.5 bg-gray-200 dark:bg-gray-700 my-1 min-h-[24px]" />}
@@ -600,19 +603,12 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
             {service.numero_tren && (
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Train className="w-3 h-3 text-gray-400 shrink-0" />
-                {onTrainTap ? (
-                  <button
-                    onClick={onTrainTap}
-                    className="text-xs font-bold text-blue-600 dark:text-blue-400 tracking-wide
-                      underline underline-offset-2 hover:text-blue-700 active:opacity-70 transition-colors"
-                  >
-                    Tren {service.numero_tren}
-                  </button>
-                ) : (
-                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400 tracking-wide">
-                    Tren {service.numero_tren}
-                  </span>
-                )}
+                <span className={cn(
+                  'text-xs font-bold tracking-wide',
+                  onTrainTap ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400',
+                )}>
+                  Tren {service.numero_tren}
+                </span>
               </div>
             )}
 
