@@ -7,8 +7,16 @@ import type { PdfUpload, Profile } from '@/types'
 import { formatDate } from '@/lib/utils'
 import {
   Upload, Users, FileText, CheckCircle, XCircle,
-  Clock, Loader2, ChevronRight, Plus, RefreshCw, AlertCircle
+  Clock, Loader2, ChevronRight, Plus, RefreshCw, AlertCircle,
+  Trash2, ShieldAlert, ChevronDown,
 } from 'lucide-react'
+
+type ConfirmState = {
+  title: string
+  description: string
+  rpc: string
+  args?: Record<string, unknown>
+}
 
 const ESTADO_CONFIG = {
   pendiente:   { icon: Clock,       color: 'text-amber-500', bg: 'bg-amber-50',  label: 'Pendiente' },
@@ -18,13 +26,20 @@ const ESTADO_CONFIG = {
 } as const
 
 export default function AdminPage() {
-  const navigate   = useNavigate()
-  const { isAdmin } = useAuth()
+  const navigate    = useNavigate()
+  const { isAdmin, profile } = useAuth()
+  const isSuperAdmin = profile?.role === 'superadmin'
   const pendingUsers = usePendingUsers(isAdmin)
 
   const [uploads,      setUploads]      = useState<PdfUpload[]>([])
   const [maquinistas,  setMaquinistas]  = useState<Profile[]>([])
   const [loadingUploads, setLoadingUploads] = useState(true)
+
+  // Mantenimiento
+  const [mantOpen,     setMantOpen]     = useState(false)
+  const [confirm,      setConfirm]      = useState<ConfirmState | null>(null)
+  const [mantLoading,  setMantLoading]  = useState(false)
+  const [mantResult,   setMantResult]   = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -52,6 +67,21 @@ export default function AdminPage() {
     } finally {
       setLoadingUploads(false)
     }
+  }
+
+  async function runMantAction() {
+    if (!confirm) return
+    setMantLoading(true)
+    setMantResult(null)
+    const { data, error } = await supabase.rpc(confirm.rpc, confirm.args ?? {})
+    setMantLoading(false)
+    if (error) {
+      setMantResult(`Error: ${error.message}`)
+    } else {
+      setMantResult(`Hecho. ${data ?? 0} registros eliminados.`)
+      loadData()
+    }
+    setConfirm(null)
   }
 
   // Suscripción realtime al estado de los uploads
@@ -193,6 +223,158 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+      {/* Zona de mantenimiento — solo superadmin */}
+      {isSuperAdmin && (
+        <div className="rounded-2xl border border-red-100 bg-red-50 overflow-hidden">
+          <button
+            onClick={() => { setMantOpen(v => !v); setMantResult(null) }}
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+          >
+            <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+              <ShieldAlert className="w-4 h-4 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-700">Zona de mantenimiento</p>
+              <p className="text-xs text-red-500">Acciones destructivas · Solo superadmin</p>
+            </div>
+            <ChevronDown className={`w-4 h-4 text-red-400 transition-transform ${mantOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {mantOpen && (
+            <div className="px-4 pb-4 flex flex-col gap-2 border-t border-red-100">
+              {mantResult && (
+                <p className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mt-2">
+                  {mantResult}
+                </p>
+              )}
+
+              <MantItem
+                label="Borrar asignaciones de un usuario"
+                description="Elimina todos los turnos asignados a un maquinista"
+                userList={maquinistas}
+                onExecute={(userId, userName) => setConfirm({
+                  title: `Borrar asignaciones de ${userName}`,
+                  description: `Se eliminarán todas las asignaciones de ${userName}. Esta acción no se puede deshacer.`,
+                  rpc: 'superadmin_borrar_asignaciones_usuario',
+                  args: { p_user_id: userId },
+                })}
+              />
+
+              <MantItem
+                label="Limpiar catálogo de turnos"
+                description="Borra todos los turnos y sus servicios del catálogo"
+                onExecute={() => setConfirm({
+                  title: 'Limpiar catálogo de turnos',
+                  description: 'Se eliminarán todos los turnos y sus servicios. Las asignaciones existentes quedarán sin turno asociado.',
+                  rpc: 'superadmin_limpiar_catalogo_turnos',
+                })}
+              />
+
+              <MantItem
+                label="Limpiar detalle de trenes (LH-820)"
+                description="Borra todos los registros de lh_trenes"
+                onExecute={() => setConfirm({
+                  title: 'Limpiar LH-820',
+                  description: 'Se eliminarán todos los trenes y sus paradas importados del LH-820.',
+                  rpc: 'superadmin_limpiar_lh_trenes',
+                })}
+              />
+
+              <MantItem
+                label="Limpiar historial de uploads"
+                description="Borra todos los registros del historial de importaciones"
+                onExecute={() => setConfirm({
+                  title: 'Limpiar historial de uploads',
+                  description: 'Se eliminará todo el historial de importaciones de PDFs.',
+                  rpc: 'superadmin_limpiar_pdf_uploads',
+                })}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal de confirmación */}
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
+            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-base font-bold text-gray-900 text-center mb-2">{confirm.title}</h3>
+            <p className="text-sm text-gray-500 text-center mb-6">{confirm.description}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirm(null)}
+                disabled={mantLoading}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={runMantAction}
+                disabled={mantLoading}
+                className="flex-1 py-3 rounded-xl bg-red-600 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {mantLoading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Ejecutando…</>
+                  : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  )
+}
+
+function MantItem({ label, description, userList, onExecute }: {
+  label: string
+  description: string
+  userList?: Profile[]
+  onExecute: (userId?: string, userName?: string) => void
+}) {
+  const [selectedId, setSelectedId] = useState('')
+
+  function handleClick() {
+    if (userList) {
+      if (!selectedId) return
+      const u = userList.find(p => p.id === selectedId)
+      onExecute(selectedId, u ? `${u.nombre} ${u.apellidos}` : selectedId)
+    } else {
+      onExecute()
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-red-100 p-3 flex flex-col gap-2">
+      <div>
+        <p className="text-sm font-semibold text-gray-800">{label}</p>
+        <p className="text-xs text-gray-500">{description}</p>
+      </div>
+      {userList && (
+        <select
+          value={selectedId}
+          onChange={e => setSelectedId(e.target.value)}
+          className="w-full text-sm px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+        >
+          <option value="">Selecciona un maquinista…</option>
+          {userList.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.nombre} {p.apellidos} ({p.matricula})
+            </option>
+          ))}
+        </select>
+      )}
+      <button
+        onClick={handleClick}
+        disabled={!!userList && !selectedId}
+        className="self-end px-4 py-1.5 text-xs font-semibold bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-40 flex items-center gap-1.5"
+      >
+        <Trash2 className="w-3 h-3" />
+        Ejecutar
+      </button>
     </div>
   )
 }
