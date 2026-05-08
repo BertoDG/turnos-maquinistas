@@ -603,10 +603,7 @@ function ServiceRow({ service, isLast, nombreEstacion, onTrainTap }: {
             {service.numero_tren && (
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Train className="w-3 h-3 text-gray-400 shrink-0" />
-                <span className={cn(
-                  'text-xs font-bold tracking-wide',
-                  onTrainTap ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400',
-                )}>
+                <span className="text-xs font-bold tracking-wide text-gray-500 dark:text-gray-400">
                   Tren {service.numero_tren}
                 </span>
               </div>
