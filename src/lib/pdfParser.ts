@@ -812,6 +812,15 @@ async function processTable(
   COMERCIAL: Set<string>,
   fixedSentido?: 'IDA' | 'VUELTA'
 ) {
+  // Función auxiliar para crear bounds
+  const makeBounds = (clusters: number[], nums: string[], sentido: 'IDA' | 'VUELTA'): { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }[] => {
+    return clusters.map((cc, i) => {
+      const prev = i > 0 ? clusters[i - 1] : cc - 300
+      const next = i < clusters.length - 1 ? clusters[i + 1] : cc + 300
+      return { num: nums[i] || '', colMin: (prev + cc) / 2, colMax: (cc + next) / 2, sentido }
+    }).filter(b => b.num !== '')
+  }
+
   // ── 3. Buscar TODOS los números de tren en la tabla ──────────────────────
   const headerRowSet = new Set<number>()
   const allTrenCols: { num: string; col: number }[] = []
@@ -904,17 +913,7 @@ async function processTable(
     console.log(`[LH820] Pág ${pageNum} (${tableType}): VUELTA [${vueltaClusters.map(c => c.toFixed(0)).join(',')}]`)
 
     // ── 6. Construir colBounds para IDA y VUELTA ──────────────────────────────
-    type Bound = { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }
-
-    function makeBounds(clusters: number[], nums: string[], sentido: 'IDA' | 'VUELTA'): Bound[] {
-      return clusters.map((cc, i) => {
-        const prev = i > 0 ? clusters[i - 1] : cc - 300
-        const next = i < clusters.length - 1 ? clusters[i + 1] : cc + 300
-        return { num: nums[i] ?? '', colMin: (prev + cc) / 2, colMax: (cc + next) / 2, sentido }
-      }).filter(b => b.num !== '')
-    }
-
-    const allBounds: Bound[] = [
+    const allBounds = [
       ...makeBounds(idaClusters, uniqueNums, 'IDA'),
       ...makeBounds(vueltaClusters, uniqueNums, 'VUELTA'),
     ]
@@ -1016,17 +1015,7 @@ async function processTable(
     console.log(`[LH820] Pág ${pageNum} (${tableType}): ${sentido} [${clusters.map(c => c.toFixed(0)).join(',')}]`)
 
     // ── 6. Construir colBounds para el sentido fijo ──────────────────────────
-    type Bound = { num: string; colMin: number; colMax: number; sentido: 'IDA' | 'VUELTA' }
-
-    function makeBounds(clusters: number[], nums: string[], sentido: 'IDA' | 'VUELTA'): Bound[] {
-      return clusters.map((cc, i) => {
-        const prev = i > 0 ? clusters[i - 1] : cc - 300
-        const next = i < clusters.length - 1 ? clusters[i + 1] : cc + 300
-        return { num: nums[i] ?? '', colMin: (prev + cc) / 2, colMax: (cc + next) / 2, sentido }
-      }).filter(b => b.num !== '')
-    }
-
-    const allBounds: Bound[] = makeBounds(clusters, uniqueNums, sentido)
+    const allBounds = makeBounds(clusters, uniqueNums, sentido)
 
     if (allBounds.length === 0) {
       console.warn(`[LH820] Pág ${pageNum} (${tableType}): sin columnas detectadas, tabla omitida`)
@@ -1102,7 +1091,6 @@ async function processTable(
       }
     }
   }
-}
 }
 
 // =============================================================
