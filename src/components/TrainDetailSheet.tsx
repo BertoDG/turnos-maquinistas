@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Train, MapPin, Clock, Loader2, AlertCircle, Gauge } from 'lucide-react'
 
@@ -58,6 +58,16 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
 
+  // Interceptar botón/gesto de retroceso para cerrar el sheet
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useEffect(() => {
+    window.history.pushState({ trainDetail: true }, '')
+    const handlePop = () => onCloseRef.current()
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     setError(null)
@@ -116,7 +126,7 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
       <div className="flex-shrink-0 flex items-center gap-3 px-3 py-3
         border-b border-gray-100 dark:border-gray-800">
         <button
-          onClick={onClose}
+          onClick={() => window.history.back()}
           className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
