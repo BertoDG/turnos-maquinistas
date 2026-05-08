@@ -47,17 +47,6 @@ const TIPO_LABELS: Record<string, { label: string; color: string }> = {
   OTRO:            { label: 'Tren',           color: 'bg-gray-100 text-gray-600' },
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function pairedNumero(numero: string): string {
-  const n = parseInt(numero, 10)
-  return String(n % 2 === 0 ? n + 1 : n - 1)
-}
-
-function isPar(numero: string) {
-  return parseInt(numero, 10) % 2 === 0
-}
-
 // ── Componente ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -66,38 +55,27 @@ interface Props {
 }
 
 export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
-  // El número que se muestra puede cambiar si el usuario cambia de pestaña
-  const [activeNumero, setActiveNumero] = useState(numeroTren)
-
-  const [tren,        setTren]        = useState<LhTren | null>(null)
-  const [pairedExists, setPairedExists] = useState(false)
-  const [loading,     setLoading]     = useState(true)
-  const [error,       setError]       = useState<string | null>(null)
-
-  useEffect(() => {
-    setActiveNumero(numeroTren)
-  }, [numeroTren])
+  const [tren,    setTren]    = useState<LhTren | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true)
     setError(null)
 
-    Promise.all([
-      supabase.from('lh_trenes').select('*').eq('numero', activeNumero).single(),
-      supabase.from('lh_trenes').select('numero').eq('numero', pairedNumero(activeNumero)).maybeSingle(),
-    ]).then(([{ data, error: err }, { data: paired }]) => {
-      if (err || !data) {
-        setError(err?.code === 'PGRST116'
-          ? 'No hay datos del LH-820 para este tren.'
-          : (err?.message ?? 'Error al cargar los datos del tren')
-        )
-      } else {
-        setTren(data as LhTren)
-        setPairedExists(!!paired)
-      }
-      setLoading(false)
-    })
-  }, [activeNumero])
+    supabase.from('lh_trenes').select('*').eq('numero', numeroTren).single()
+      .then(({ data, error: err }) => {
+        if (err || !data) {
+          setError(err?.code === 'PGRST116'
+            ? 'No hay datos del LH-820 para este tren.'
+            : (err?.message ?? 'Error al cargar los datos del tren')
+          )
+        } else {
+          setTren(data as LhTren)
+        }
+        setLoading(false)
+      })
+  }, [numeroTren])
 
   // Fusionar paradas + tramos ordenados por sit_km según dirección del tren
   const puntosDisplay = useMemo((): PuntoDisplay[] => {
@@ -131,10 +109,7 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
     return all
   }, [tren])
 
-  const tipoConf  = tren ? (TIPO_LABELS[tren.tipo] ?? TIPO_LABELS.OTRO) : null
-  const currentPar = isPar(activeNumero)
-  const tabIdaNum  = currentPar ? activeNumero : pairedNumero(activeNumero)
-  const tabVueltaNum = currentPar ? pairedNumero(activeNumero) : activeNumero
+  const tipoConf = tren ? (TIPO_LABELS[tren.tipo] ?? TIPO_LABELS.OTRO) : null
 
   return (
     <>
@@ -162,7 +137,7 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                    {activeNumero}
+                    {numeroTren}
                   </h2>
                   {tipoConf && (
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${tipoConf.color}`}>
@@ -188,26 +163,6 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
               <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
-
-          {/* Pestañas Ida / Vuelta */}
-          {(pairedExists || !loading) && (
-            <div className="flex px-5 pt-3 pb-0 gap-2 border-b border-gray-100 dark:border-gray-700">
-              <TabBtn
-                label="Ida"
-                numero={tabIdaNum}
-                active={currentPar}
-                disabled={!pairedExists && !currentPar}
-                onClick={() => setActiveNumero(tabIdaNum)}
-              />
-              <TabBtn
-                label="Vuelta"
-                numero={tabVueltaNum}
-                active={!currentPar}
-                disabled={!pairedExists && currentPar}
-                onClick={() => setActiveNumero(tabVueltaNum)}
-              />
-            </div>
-          )}
         </div>
 
         {/* Contenido scrollable */}
@@ -375,28 +330,3 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
   )
 }
 
-// ── Pestaña ───────────────────────────────────────────────────────────────────
-
-function TabBtn({ label, numero, active, disabled, onClick }: {
-  label: string; numero: string; active: boolean; disabled: boolean; onClick: () => void
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`px-4 py-2 text-sm font-semibold rounded-t-xl transition-colors relative
-        ${active
-          ? 'text-red-600 dark:text-red-400 border-b-2 border-red-600 dark:border-red-400 -mb-px bg-transparent'
-          : disabled
-            ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-        }`}
-    >
-      {label}
-      <span className={`ml-1.5 text-[10px] font-normal
-        ${active ? 'text-red-400 dark:text-red-500' : 'text-gray-400 dark:text-gray-600'}`}>
-        {numero}
-      </span>
-    </button>
-  )
-}
