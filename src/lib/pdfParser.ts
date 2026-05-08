@@ -714,7 +714,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
 
   const trenesMap = new Map<string, LH820Tren>()
 
-  const TREN_SCAN_RE = /\b(7\d{4})\b/g
+  const TREN_SCAN_RE = /\b(7\d{4})\b/
   const HORA_SCAN_RE = /\b(\d{1,2})[.:](\d{2})\b/
   // Sit Km: número decimal con exactamente 1 decimal (49.7, 38.0…)
   const SITKM_RE    = /^\d{1,3}\.\d$/
