@@ -1,11 +1,9 @@
 """
 Vercel serverless function — POST /api/parse-lh820
 
-Body JSON: { "bucket": "pdfs-renfe", "path": "lh820-temp/xxx.pdf" }
-
-Variables de entorno requeridas (Vercel):
-  SUPABASE_URL
-  SUPABASE_SERVICE_KEY
+Body JSON: { "url": "<signed_url_de_supabase_storage>" }
+El cliente genera una URL firmada temporal (5 min) y la pasa aquí.
+El servidor descarga el PDF sin necesitar credenciales.
 """
 
 from http.server import BaseHTTPRequestHandler
@@ -29,17 +27,12 @@ class handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get('Content-Length', 0))
             body = json.loads(self.rfile.read(length))
-            bucket = body.get('bucket', 'pdfs-renfe')
-            path   = body.get('path', '')
-            if not path:
-                return self._error(400, 'Falta path del fichero en Supabase Storage')
+            url  = body.get('url', '')
+            if not url:
+                return self._error(400, 'Falta url del fichero')
 
-            url = os.environ['SUPABASE_URL'].rstrip('/') + f'/storage/v1/object/{bucket}/{path}'
-            key = os.environ['SUPABASE_SERVICE_KEY']
-            req = urllib.request.Request(url, headers={
-                'Authorization': f'Bearer {key}',
-                'apikey': key,
-            })
+            # URL firmada de Supabase Storage — no necesita auth headers
+            req = urllib.request.Request(url)
             with urllib.request.urlopen(req) as resp:
                 pdf_bytes = resp.read()
 

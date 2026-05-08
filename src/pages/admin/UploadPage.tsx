@@ -261,13 +261,25 @@ export default function UploadPage() {
           return
         }
 
+        // Generar URL firmada (válida 5 min) para que el servidor pueda descargar sin auth
+        const { data: signedData, error: signErr } = await supabase.storage
+          .from('pdfs-renfe')
+          .createSignedUrl(tempPath, 300)
+
+        if (signErr || !signedData?.signedUrl) {
+          await supabase.storage.from('pdfs-renfe').remove([tempPath])
+          setStep('error')
+          setErrorMsg(`Error generando URL firmada: ${signErr?.message ?? 'desconocido'}`)
+          return
+        }
+
         setProgressMsg('Procesando PDF en el servidor…')
         let apiRes: Response
         try {
           apiRes = await fetch('/api/parse-lh820', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bucket: 'pdfs-renfe', path: tempPath }),
+            body: JSON.stringify({ url: signedData.signedUrl }),
           })
         } finally {
           await supabase.storage.from('pdfs-renfe').remove([tempPath])
