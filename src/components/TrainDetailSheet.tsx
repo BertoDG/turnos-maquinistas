@@ -144,11 +144,6 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
                       {tipoConf.label}
                     </span>
                   )}
-                  {tren?.sentido && (
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-                      {tren.sentido === 'PAR' ? 'Ida' : 'Vuelta'}
-                    </span>
-                  )}
                 </div>
                 {tren?.linea && (
                   <p className="text-sm text-gray-500 dark:text-gray-400">{tren.linea}</p>
