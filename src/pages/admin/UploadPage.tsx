@@ -247,7 +247,8 @@ export default function UploadPage() {
         }
       } else {
         // PDF: subir a Supabase Storage y procesar en el servidor con pypdfium2
-        const tempPath = `lh820-temp/${Date.now()}_${file.name}`
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const tempPath = `lh820-temp/${Date.now()}_${safeName}`
 
         setProgressMsg('Subiendo PDF…')
         const { error: uploadErr } = await supabase.storage
