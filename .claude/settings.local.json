@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node scripts/analyze_lh820.mjs)"
+    ]
+  }
+}

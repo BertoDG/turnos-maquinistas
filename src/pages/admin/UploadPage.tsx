@@ -51,12 +51,18 @@ export default function UploadPage() {
     e.preventDefault()
     setIsDragging(false)
     const f = e.dataTransfer.files[0]
-    if (f?.type === 'application/pdf') resetWithFile(f)
-  }, [])
+    if (!f) return
+    const isPdf = f.type === 'application/pdf'
+    const isJson = f.type === 'application/json' || f.name.endsWith('.json')
+    if (isPdf || (isJson && tipo === 'lh_trenes')) resetWithFile(f)
+  }, [tipo])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f?.type === 'application/pdf') resetWithFile(f)
+    if (!f) return
+    const isPdf = f.type === 'application/pdf'
+    const isJson = f.type === 'application/json' || f.name.endsWith('.json')
+    if (isPdf || (isJson && tipo === 'lh_trenes')) resetWithFile(f)
   }
 
   function resetWithFile(f: File) {
@@ -210,12 +216,11 @@ export default function UploadPage() {
     }
   }
 
-  // ── LH-820: parsear PDF y mostrar confirmación ───────────────
+  // ── LH-820: parsear PDF/JSON y mostrar confirmación ─────────
   async function processLhTrenes() {
     if (!file || !profile) return
     try {
       setStep('analizando')
-      setProgressMsg('Extrayendo trenes del PDF…')
 
       // Verificar que la tabla lh_trenes existe antes de parsear
       const { error: tableErr } = await supabase
@@ -231,17 +236,33 @@ export default function UploadPage() {
         return
       }
 
-      const trenes = await parseLH820(file)
+      let trenes: Awaited<ReturnType<typeof parseLH820>>
 
-      console.log('[LH820-Upload] Trenes con paradas listos para importar:', trenes.map(t => `${t.numero}(${t.paradas.length}p)`).join(', ') || '(ninguno)')
+      const isJson = file.type === 'application/json' || file.name.endsWith('.json')
+      if (isJson) {
+        // JSON pre-generado por scripts/parse_lh820.py
+        setProgressMsg('Leyendo JSON…')
+        const text = await file.text()
+        trenes = JSON.parse(text)
+        if (!Array.isArray(trenes)) {
+          setStep('error')
+          setErrorMsg('El JSON no tiene el formato esperado (debe ser un array de trenes).')
+          return
+        }
+      } else {
+        // PDF: usar parser (requiere Python con pypdfium2 para este tipo de PDF)
+        setProgressMsg('Extrayendo trenes del PDF…')
+        trenes = await parseLH820(file)
+      }
+
+      console.log('[LH820-Upload] Trenes listos para importar:', trenes.map(t => `${t.numero}(${t.paradas.length}p)`).join(', ') || '(ninguno)')
 
       if (trenes.length === 0) {
         setStep('error')
         setErrorMsg(
-          'No se encontraron trenes con horario en el PDF. ' +
-          'Abre la Consola del navegador (F12 → Consola) y busca los mensajes [LH820] ' +
-          'para ver qué páginas procesó el parser y qué trenes detectó. ' +
-          'Asegúrate de subir el Anejo 5 del LH AM 820.'
+          'No se encontraron trenes con horario. ' +
+          'Si subiste un PDF, genera el JSON con: python scripts/parse_lh820.py -o lh820.json ' +
+          'y sube el archivo .json.'
         )
         return
       }
@@ -455,10 +476,17 @@ export default function UploadPage() {
       {tipo === 'lh_trenes' && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl p-4 flex gap-3">
           <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
-            Sube directamente el PDF del <strong>Libro Horario AM 820, Anejo 5</strong>.
-            La app extraerá los horarios de trenes automáticamente (números 7XXXX con paradas y horas).
-          </p>
+          <div className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed space-y-1">
+            <p>
+              Sube el <strong>JSON generado por el parser</strong> (recomendado) o el PDF del Anejo 5.
+            </p>
+            <p className="font-mono bg-blue-100 dark:bg-blue-900/40 rounded px-2 py-1 text-blue-900 dark:text-blue-200">
+              python scripts/parse_lh820.py -o lh820.json
+            </p>
+            <p>
+              Luego sube el archivo <code>lh820.json</code> aquí.
+            </p>
+          </div>
         </div>
       )}
 
@@ -474,7 +502,8 @@ export default function UploadPage() {
             ${isDragging ? 'border-red-400 bg-red-50' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}
             ${file ? 'cursor-default' : 'cursor-pointer'}`}
         >
-          <input ref={fileInputRef} type="file" accept="application/pdf"
+          <input ref={fileInputRef} type="file"
+            accept={tipo === 'lh_trenes' ? 'application/pdf,application/json,.json' : 'application/pdf'}
             onChange={handleFileChange} className="hidden" />
           {file ? (
             <>
