@@ -126,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const email = emailOrMatricula.includes('@')
         ? emailOrMatricula.trim()
-        : `${emailOrMatricula.trim().toLowerCase()}@turnosmaq.internal`
+        : `${emailOrMatricula.trim().toLowerCase()}@turnosmaq.app`
 
       const { error } = await supabase.auth.signInWithPassword({ email, password })
 
@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   async function signUp(data: RegisterData): Promise<{ error: string | null }> {
     try {
-      const email = `${data.matricula.trim().toLowerCase()}@turnosmaq.internal`
+      const email = `${data.matricula.trim().toLowerCase()}@turnosmaq.app`
 
       const { error } = await supabase.auth.signUp({
         email,

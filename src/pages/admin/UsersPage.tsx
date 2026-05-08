@@ -671,7 +671,7 @@ function NewUserFormPanel({ callerRole, onSuccess, onCancel }: { callerRole: str
           placeholder="Ej: 87654" className={inputCls} required />
         {form.matricula && (
           <p className="text-[10px] text-gray-400 mt-1 ml-1">
-            Email interno: {form.matricula.toLowerCase()}@turnosmaq.internal
+            Email interno: {form.matricula.toLowerCase()}@turnosmaq.app
           </p>
         )}
       </div>
