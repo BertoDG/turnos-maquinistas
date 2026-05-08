@@ -483,7 +483,7 @@ export default function UploadPage() {
           {([
             { id: 'asignacion_maquinista', label: 'Asignación maquinista', desc: 'Desarrollo anual de un maquinista' },
             { id: 'catalogo_turnos',       label: 'Catálogo de turnos',    desc: 'Definición de turnos y trenes'   },
-            { id: 'lh_trenes',             label: 'Detalle de Trenes',     desc: 'PDF Anejo 5 – horarios por estación'},
+            { id: 'lh_trenes',             label: 'Detalle de Trenes',     desc: 'Horarios de trenes por estación'   },
           ] as { id: UploadTipo; label: string; desc: string }[]).map(({ id: t, label, desc }) => (
             <button key={t} onClick={() => { setTipo(t); removeFile() }}
               className={`p-3 rounded-xl border-2 text-left transition-all
@@ -529,7 +529,7 @@ export default function UploadPage() {
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-2xl p-4 flex gap-3">
           <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
           <div className="text-xs text-blue-800 dark:text-blue-300 leading-relaxed">
-            Sube el PDF del Anejo 5 (LH-820). El servidor lo procesará automáticamente y
+            Sube el PDF de horarios. El servidor lo procesará automáticamente y
             extraerá todos los trenes con sus horarios.
           </div>
         </div>
