@@ -483,7 +483,7 @@ export default function UploadPage() {
           {([
             { id: 'asignacion_maquinista', label: 'Asignación maquinista', desc: 'Desarrollo anual de un maquinista' },
             { id: 'catalogo_turnos',       label: 'Catálogo de turnos',    desc: 'Definición de turnos y trenes'   },
-            { id: 'lh_trenes',             label: 'Detalle trenes LH-820', desc: 'PDF Anejo 5 – horarios por estación'},
+            { id: 'lh_trenes',             label: 'Detalle de Trenes',     desc: 'PDF Anejo 5 – horarios por estación'},
           ] as { id: UploadTipo; label: string; desc: string }[]).map(({ id: t, label, desc }) => (
             <button key={t} onClick={() => { setTipo(t); removeFile() }}
               className={`p-3 rounded-xl border-2 text-left transition-all
