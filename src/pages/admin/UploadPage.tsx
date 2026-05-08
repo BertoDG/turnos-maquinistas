@@ -343,8 +343,18 @@ export default function UploadPage() {
       let total = 0
 
       for (let i = 0; i < trenes.length; i += BATCH) {
-        const chunk = trenes.slice(i, i + BATCH)
-        console.log(`[LH820-Upload] Upsert lote ${i / BATCH + 1}: trenes`, chunk.map((t: { numero: string }) => t.numero).join(', '))
+        // Mapear solo las columnas que existen en lh_trenes (strip sentido, vigente_desde, etc.)
+        const chunk = trenes.slice(i, i + BATCH).map((t: {
+          numero: string; tipo: string; linea: string | null
+          paradas: unknown[]; notas: string | null
+        }) => ({
+          numero:  t.numero,
+          tipo:    t.tipo,
+          linea:   t.linea   ?? null,
+          paradas: t.paradas ?? [],
+          notas:   t.notas   ?? null,
+        }))
+        console.log(`[LH820-Upload] Upsert lote ${i / BATCH + 1}: trenes`, chunk.map(t => t.numero).join(', '))
         const { error: err } = await supabase
           .from('lh_trenes')
           .upsert(chunk, { onConflict: 'numero' })
