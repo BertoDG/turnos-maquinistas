@@ -168,10 +168,10 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
             )}
 
             {/* Cabecera de columnas */}
-            <div className="flex items-center gap-2 pb-2 mb-1 border-b border-gray-100 dark:border-gray-800">
+            <div className="flex items-center gap-1 pb-2 mb-1 border-b border-gray-100 dark:border-gray-800">
               <div className="w-8 shrink-0" />
-              <span className="w-14 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Km</span>
-              <span className="w-16 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">V.Máx</span>
+              <span className="w-10 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Km</span>
+              <span className="w-11 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">V.Máx</span>
               <span className="flex-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Estación</span>
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0 pr-1">Hora</span>
             </div>
@@ -184,17 +184,17 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
                 if (punto._tipo === 'tramo') {
                   return (
                     <div key={`tramo-${punto.sit_km}`}
-                      className="flex items-center gap-2 py-1">
+                      className="flex items-center gap-1 py-1">
                       <div className="relative z-10 w-8 flex justify-center shrink-0">
                         <div className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
                       </div>
-                      <span className="w-14 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
+                      <span className="w-10 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
                         {punto.sit_km.toFixed(1)}
                       </span>
-                      <div className="w-16 shrink-0">
+                      <div className="w-11 shrink-0">
                         {punto.vmax != null && (
                           <span className="text-[10px] font-semibold text-blue-500 dark:text-blue-400
-                            bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded
+                            bg-blue-50 dark:bg-blue-900/30 px-1 py-0.5 rounded
                             inline-flex items-center gap-0.5">
                             <Gauge className="w-2.5 h-2.5" />
                             {punto.vmax}
@@ -214,7 +214,7 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
 
                 return (
                   <div key={`${p.orden}-${p.estacion}`}
-                    className="flex items-center gap-2 py-2">
+                    className="flex items-center gap-1 py-2">
 
                     {/* Dot */}
                     <div className="relative z-10 w-8 flex justify-center shrink-0">
@@ -229,15 +229,15 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
                     </div>
 
                     {/* Km */}
-                    <span className="w-14 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
+                    <span className="w-10 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
                       {p.sit_km != null ? p.sit_km.toFixed(1) : ''}
                     </span>
 
                     {/* VMax */}
-                    <div className="w-16 shrink-0">
+                    <div className="w-11 shrink-0">
                       {p.vmax != null && (
                         <span className="text-[10px] font-semibold text-blue-500 dark:text-blue-400
-                          bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded
+                          bg-blue-50 dark:bg-blue-900/30 px-1 py-0.5 rounded
                           inline-flex items-center gap-0.5">
                           <Gauge className="w-2.5 h-2.5" />
                           {p.vmax}
