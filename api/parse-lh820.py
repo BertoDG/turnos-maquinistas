@@ -1,12 +1,11 @@
 """
 Vercel serverless function — POST /api/parse-lh820
 
-Body JSON esperado:
-  { "bucket": "pdfs-renfe", "path": "lh820-temp/xxx.pdf" }
+Acepta el PDF como cuerpo binario (application/octet-stream).
+Si el header X-Compressed: deflate-raw está presente, descomprime
+con zlib antes de parsear.
 
-Variables de entorno requeridas (Vercel):
-  SUPABASE_URL
-  SUPABASE_SERVICE_KEY
+Devuelve JSON array de trenes.
 """
 
 from http.server import BaseHTTPRequestHandler
@@ -14,9 +13,8 @@ import json
 import os
 import sys
 import tempfile
-import urllib.request
+import zlib
 
-# Importar lógica de parseo desde scripts/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 
@@ -30,25 +28,17 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             length = int(self.headers.get('Content-Length', 0))
-            body = json.loads(self.rfile.read(length))
-            bucket = body.get('bucket', 'pdfs-renfe')
-            path   = body.get('path', '')
-            if not path:
-                return self._error(400, 'Falta path del fichero en Supabase Storage')
+            if length == 0:
+                return self._error(400, 'PDF vacío')
 
-            # Descargar el PDF desde Supabase Storage
-            url  = os.environ['SUPABASE_URL'].rstrip('/') + f'/storage/v1/object/{bucket}/{path}'
-            key  = os.environ['SUPABASE_SERVICE_KEY']
-            req  = urllib.request.Request(url, headers={
-                'Authorization': f'Bearer {key}',
-                'apikey': key,
-            })
-            with urllib.request.urlopen(req) as resp:
-                pdf_bytes = resp.read()
+            raw = self.rfile.read(length)
 
-            # Guardar en fichero temporal y parsear
+            # Descomprimir si el cliente lo envió comprimido
+            if self.headers.get('X-Compressed') == 'deflate-raw':
+                raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+
             with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-                tmp.write(pdf_bytes)
+                tmp.write(raw)
                 pdf_path = tmp.name
 
             try:
@@ -60,23 +50,21 @@ class handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
 
-            result = json.dumps(trenes, ensure_ascii=False).encode('utf-8')
+            body = json.dumps(trenes, ensure_ascii=False).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json; charset=utf-8')
-            self.send_header('Content-Length', str(len(result)))
+            self.send_header('Content-Length', str(len(body)))
             self._cors()
             self.end_headers()
-            self.wfile.write(result)
+            self.wfile.write(body)
 
-        except KeyError as exc:
-            self._error(500, f'Variable de entorno no configurada: {exc}')
         except Exception as exc:
             self._error(500, str(exc))
 
     def _cors(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, apikey')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Compressed')
 
     def _error(self, code: int, msg: str):
         body = json.dumps({'error': msg}).encode()
