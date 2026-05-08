@@ -51,6 +51,11 @@ def tipo_tren(numero: str) -> str:
     return 'OTRO'
 
 
+def sentido_tren(numero: str) -> str:
+    """PAR = nº par (Laviana→Gijón / dirección A). IMPAR = dirección B."""
+    return 'PAR' if int(numero) % 2 == 0 else 'IMPAR'
+
+
 def parse_hora(h_str: str, m_str: str) -> Optional[str]:
     h, mi = int(h_str), int(m_str)
     if h > 30 or mi > 59:
@@ -179,8 +184,8 @@ def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
                 trenes_map[num] = {
                     'numero': num,
                     'tipo': tipo_tren(num),
+                    'sentido': sentido_tren(num),
                     'linea': None,
-                    'sentido': None,
                     'notas': None,
                     'paradas': [],
                 }

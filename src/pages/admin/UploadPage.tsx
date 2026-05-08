@@ -345,11 +345,12 @@ export default function UploadPage() {
       for (let i = 0; i < trenes.length; i += BATCH) {
         // Mapear solo las columnas que existen en lh_trenes (strip sentido, vigente_desde, etc.)
         const chunk = trenes.slice(i, i + BATCH).map((t: {
-          numero: string; tipo: string; linea: string | null
-          paradas: unknown[]; notas: string | null
+          numero: string; tipo: string; sentido: string | null
+          linea: string | null; paradas: unknown[]; notas: string | null
         }) => ({
           numero:  t.numero,
           tipo:    t.tipo,
+          sentido: t.sentido ?? null,
           linea:   t.linea   ?? null,
           paradas: t.paradas ?? [],
           notas:   t.notas   ?? null,
