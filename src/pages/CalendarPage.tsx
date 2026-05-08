@@ -20,7 +20,7 @@ export default function CalendarPage() {
 
   const targetId = maquinistaId || profile?.id
 
-  const { months, loading, error, loadMorePast, loadMoreFuture, refreshDay } = useCalendar({
+  const { months, loading, error, loadMorePast, loadMoreFuture, refetch, refreshDay } = useCalendar({
     maquinistaId: targetId,
   })
 
@@ -36,10 +36,11 @@ export default function CalendarPage() {
     function onRefresh(e: Event) {
       const date = (e as CustomEvent<{ date?: string }>).detail?.date
       if (date) refreshDay(date)
+      else refetch()
     }
     window.addEventListener('calendar:refresh', onRefresh)
     return () => window.removeEventListener('calendar:refresh', onRefresh)
-  }, [refreshDay, maquinistaId])
+  }, [refreshDay, refetch, maquinistaId])
 
   // Scroll al mes actual solo la primera vez que los datos están listos
   useEffect(() => {

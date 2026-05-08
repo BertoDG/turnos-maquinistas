@@ -272,6 +272,7 @@ export default function ProfilePage() {
 
       setUploadState({ status: 'done', message: '¡Turnos importados correctamente!', count: inserted })
       setFile(null)
+      window.dispatchEvent(new CustomEvent('calendar:refresh'))
     } catch (e) {
       setUploadState({
         status: 'error',
