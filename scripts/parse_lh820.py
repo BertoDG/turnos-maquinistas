@@ -144,6 +144,14 @@ def _add_parada(tren: dict, estacion: str, hora: str,
     })
 
 
+def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
+    """Añade un punto km intermedio (cambio de VMax sin parada) a la lista tramos."""
+    tramos = tren['tramos']
+    if any(t['sit_km'] == sit_km for t in tramos):
+        return
+    tramos.append({'sit_km': sit_km, 'vmax': vmax})
+
+
 # ── Extracción de texto ────────────────────────────────────────────────────────
 
 def extract_pages(pdf_path: str) -> list[str]:
@@ -205,6 +213,7 @@ def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
                     'linea': None,
                     'notas': None,
                     'paradas': [],
+                    'tramos': [],
                 }
 
         if verbose:
@@ -256,7 +265,10 @@ def _process_line(line: str, trains: list, n_trains: int,
         state['cont_rows'] = 0 if times else 3
 
     elif sitkm is not None:
-        # Punto km sin estación → fin de continuación
+        # Punto km sin estación → marcador intermedio de VMax en el trazado.
+        # Se añade como tramo a todos los trenes de la sección.
+        for num in trains:
+            _add_tramo(trenes_map[num], sitkm, state.get('vmax'))
         state['station'] = None
         state['sitkm'] = None
         state['cont_rows'] = 0

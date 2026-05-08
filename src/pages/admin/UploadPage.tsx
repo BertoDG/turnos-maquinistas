@@ -346,13 +346,14 @@ export default function UploadPage() {
         // Mapear solo las columnas que existen en lh_trenes (strip sentido, vigente_desde, etc.)
         const chunk = trenes.slice(i, i + BATCH).map((t: {
           numero: string; tipo: string; sentido: string | null
-          linea: string | null; paradas: unknown[]; notas: string | null
+          linea: string | null; paradas: unknown[]; tramos: unknown[]; notas: string | null
         }) => ({
           numero:  t.numero,
           tipo:    t.tipo,
           sentido: t.sentido ?? null,
           linea:   t.linea   ?? null,
           paradas: t.paradas ?? [],
+          tramos:  t.tramos  ?? [],
           notas:   t.notas   ?? null,
         }))
         console.log(`[LH820-Upload] Upsert lote ${i / BATCH + 1}: trenes`, chunk.map(t => t.numero).join(', '))
