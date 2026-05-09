@@ -32,7 +32,6 @@ from typing import Optional
 RE_TREN  = re.compile(r'\b(7\d{4})\b')
 RE_HORA  = re.compile(r'(?<!\d)(\d{1,2})\.(\d{2})(?!\d)')  # H.MM → HH:MM
 RE_SITKM = re.compile(r'\b(\d{1,3})\.\s?(\d)\b')           # 49. 7 → 49.7
-RE_VMAX  = re.compile(r'^\s{0,8}(\d{2,3})(?:\s|$)')        # entero al inicio de línea
 RE_SKIP  = re.compile(
     r'(Bloqueo|Dependencia|VM.x|Sit\s*Km|C\s+Hora|HORARIO\s*820|P.g\s+[IVX]'
     r'|Tipo:|CERCANIAS|MATERIAL\s+VACIO|MEDIA\s+DISTANCIA)',
@@ -70,21 +69,6 @@ def parse_sitkm(chunk: str) -> Optional[float]:
         if 0 <= v <= 600:
             return v
     return None
-
-
-# Velocidades máximas válidas en la red RENFE (múltiplos de 5, 10-220 km/h)
-_VALID_VMAX = {v for v in range(10, 225, 5)}
-
-def parse_vmax(line: str) -> Optional[int]:
-    """Extrae la velocidad máxima de la columna izquierda del LH-820.
-    Son enteros sin decimal al inicio de línea (ej: 50, 100, 70).
-    Solo se aceptan valores múltiplo de 5 entre 10 y 220 km/h.
-    """
-    m = RE_VMAX.match(line)
-    if not m:
-        return None
-    v = int(m.group(1))
-    return v if v in _VALID_VMAX else None
 
 
 def extract_station(region: str) -> Optional[str]:
@@ -128,8 +112,7 @@ def _is_comercial(line: str, hora: str, col: int) -> bool:
 
 
 def _add_parada(tren: dict, estacion: str, hora: str,
-                sit_km: Optional[float], vmax: Optional[int],
-                comercial: bool, apd: bool):
+                sit_km: Optional[float], comercial: bool, apd: bool):
     paradas = tren['paradas']
     if any(p['estacion'] == estacion and p['hora'] == hora for p in paradas):
         return
@@ -138,212 +121,9 @@ def _add_parada(tren: dict, estacion: str, hora: str,
         'estacion': estacion,
         'hora': hora,
         'sit_km': sit_km,
-        'vmax': vmax,
         'comercial': comercial,
         'apd': apd,
     })
-
-
-def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
-    """Añade un punto km intermedio (cambio de VMax sin parada) a la lista tramos."""
-    tramos = tren['tramos']
-    if any(t['sit_km'] == sit_km for t in tramos):
-        return
-    tramos.append({'sit_km': sit_km, 'vmax': vmax})
-
-
-# ── Extracción VMax con OCR (pytesseract) ────────────────────────────────────
-
-def extract_vmax_km_tesseract(pdf_path: str, pages_text: list) -> list[dict]:
-    """
-    Renderiza cada página a imagen (pypdfium2) y usa pytesseract para
-    localizar tokens numéricos con su posición (x, y) en píxeles.
-
-    Para cada renglón visual (mismo Y ± tolerancia):
-      - Identifica el VMax: entero múltiplo de 5 entre 10-220
-      - Identifica el km: decimal con un dígito (ej. 49.7)
-    Y construye el mapa {sit_km → vmax} por página.
-
-    Requiere: pip install pytesseract Pillow
-              + Tesseract instalado (https://github.com/UB-Mannheim/tesseract/wiki)
-    """
-    import pypdfium2 as pdfium
-    import pytesseract
-
-    # En Windows Tesseract se instala aquí por defecto
-    tess_win = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-    if os.path.exists(tess_win):
-        pytesseract.pytesseract.tesseract_cmd = tess_win
-
-    doc     = pdfium.PdfDocument(pdf_path)
-    result  = []
-    ROW_TOL = 12   # píxeles de margen vertical para el mismo renglón (scale=2 → ~6pt)
-
-    for pg_idx in range(len(doc)):
-        page_text = pages_text[pg_idx] if pg_idx < len(pages_text) else ''
-        if not RE_TREN.search(page_text):
-            result.append({})
-            continue
-
-        page    = doc[pg_idx]
-        bitmap  = page.render(scale=2.0)
-        pil_img = bitmap.to_pil()
-
-        data = pytesseract.image_to_data(
-            pil_img,
-            config='--psm 6 --oem 3',
-            output_type=pytesseract.Output.DICT,
-        )
-
-        # Recopilar tokens con confianza suficiente
-        vmax_tokens = []   # (x, y, valor)
-        km_tokens   = []   # (x, y, valor)
-
-        for i, text in enumerate(data['text']):
-            text = text.strip().replace(',', '.')   # OCR a veces da coma decimal
-            if not text or int(data['conf'][i]) < 30:
-                continue
-
-            x = data['left'][i]
-            y = data['top'][i]
-
-            # ¿Es un VMax válido? (entero múltiplo de 5, 10-220)
-            try:
-                v = int(text)
-                if v in _VALID_VMAX:
-                    vmax_tokens.append((x, y, v))
-            except ValueError:
-                pass
-
-            # ¿Es un km? (formato X.Y con un solo decimal)
-            km_val = parse_sitkm(text)
-            if km_val is not None:
-                km_tokens.append((x, y, km_val))
-
-        # Emparejar VMax con km del mismo renglón visual
-        page_map: dict = {}
-        for vx, vy, v in vmax_tokens:
-            mismo_renglon = [(kx, ky, km) for kx, ky, km in km_tokens
-                             if abs(ky - vy) <= ROW_TOL]
-            if mismo_renglon:
-                # El km más cercano en Y
-                _, _, km_val = min(mismo_renglon, key=lambda k: abs(k[1] - vy))
-                page_map[round(km_val, 1)] = v
-
-        result.append(page_map)
-        print(f'  Pag {pg_idx + 1}: {len(page_map)} pares vmax-km')
-
-    return result
-
-
-# ── Extracción posicional VMax (fallback sin dependencias externas) ────────────
-
-def extract_all_vmax_km(pdf_path: str) -> list[dict]:
-    """
-    Usa get_charbox() para leer las coordenadas reales de cada carácter.
-    Agrupa por renglón visual (misma coordenada Y) y, dentro de cada renglón,
-    ordena por X (izquierda→derecha).  Así la columna VMax siempre aparece
-    antes que la columna km, independientemente del orden interno del PDF.
-
-    Devuelve una lista con un dict {sit_km → vmax} por página.
-    Solo incluye km donde VMax aparece explícitamente en el mismo renglón;
-    los km intermedios se propagan en _propagate_vmax().
-    """
-    import pypdfium2 as pdfium
-
-    doc    = pdfium.PdfDocument(pdf_path)
-    result = []
-
-    ROW_TOL  = 6    # tolerancia vertical en puntos PDF para mismo renglón
-    WORD_GAP = 2.0  # gap mínimo entre caracteres para insertar espacio
-
-    for pg_idx in range(len(doc)):
-        page     = doc[pg_idx]
-        textpage = page.get_textpage()
-        n        = textpage.count_chars()
-
-        if n == 0:
-            result.append({})
-            continue
-
-        # Recopilar (ch, left, right, y_center) por carácter
-        chars = []
-        for i in range(n):
-            box = textpage.get_charbox(i)   # (left, bottom, right, top)
-            ch  = textpage.get_text_range(i, 1)
-            if ch in ('\r', '\n', '\x00') or not ch.strip():
-                continue
-            y_ctr = (box[1] + box[3]) / 2
-            chars.append((ch, box[0], box[2], y_ctr))   # ch, left, right, y
-
-        if not chars:
-            result.append({})
-            continue
-
-        # Ordenar top→bottom (y desc), luego left→right
-        chars.sort(key=lambda c: (-c[3], c[1]))
-
-        # Agrupar en renglones por Y
-        rows: list = []
-        cur:  list = []
-        row_y = None
-
-        for c in chars:
-            y = c[3]
-            if row_y is None or abs(y - row_y) <= ROW_TOL:
-                cur.append(c)
-                if row_y is None:
-                    row_y = y
-            else:
-                rows.append(cur)
-                cur   = [c]
-                row_y = y
-        if cur:
-            rows.append(cur)
-
-        # Para cada renglón: ordenar por X, reconstruir texto, extraer vmax+km
-        page_map: dict = {}
-
-        for row in rows:
-            row.sort(key=lambda c: c[1])    # por left
-            parts      = []
-            prev_right = None
-
-            for ch, left, right, y in row:
-                if prev_right is not None and (left - prev_right) > WORD_GAP:
-                    parts.append(' ')
-                parts.append(ch)
-                prev_right = right
-
-            row_text = ''.join(parts).strip()
-            v  = parse_vmax(row_text)
-            km = parse_sitkm(row_text)      # RE_SITKM solo casa X.Y (1 decimal) → no confunde tiempos
-            if v is not None and km is not None:
-                page_map[round(km, 1)] = v
-
-        result.append(page_map)
-
-    return result
-
-
-def _propagate_vmax(section_lines: list, vmax_map: dict) -> dict:
-    """
-    A partir del vmax_map posicional {km → vmax}, propaga hacia adelante
-    para todos los km de la sección (los km sin entrada directa heredan
-    el último valor visto).
-    """
-    full    = {}
-    running = None
-    for line in section_lines:
-        km = parse_sitkm(line[:15])
-        if km is None:
-            continue
-        v = vmax_map.get(round(km, 1))
-        if v is not None:
-            running = v
-        if running is not None:
-            full[km] = running
-    return full
 
 
 # ── Extracción de texto ────────────────────────────────────────────────────────
@@ -362,7 +142,7 @@ def extract_pages(pdf_path: str) -> list[str]:
 
 # ── Procesado de páginas ──────────────────────────────────────────────────────
 
-def parse_page(page_text: str, vmax_map: dict, trenes_map: dict, verbose: bool = False):
+def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
     """Procesa el texto de una página PDF (puede tener 1 ó 2 secciones)."""
     if not RE_TREN.search(page_text):
         return
@@ -403,50 +183,34 @@ def parse_page(page_text: str, vmax_map: dict, trenes_map: dict, verbose: bool =
                     'linea': None,
                     'notas': None,
                     'paradas': [],
-                    'tramos': [],
                 }
 
         if verbose:
             print(f'  Seccion {sec_num+1}: trenes={trains}')
 
         section_lines = lines[tipo_idx + 1:section_end]
-
-        # Usar mapa posicional si tiene datos; si no, el estado running-vmax
-        # de _process_line sirve como último recurso.
-        vmax_schedule = _propagate_vmax(section_lines, vmax_map) if vmax_map else {}
-
-        state: dict = {'station': None, 'sitkm': None, 'cont_rows': 0, 'vmax': None}
+        state: dict = {'station': None, 'sitkm': None, 'cont_rows': 0}
 
         for line in section_lines:
-            _process_line(line, trains, n_trains, state, trenes_map, vmax_schedule, verbose)
+            _process_line(line, trains, n_trains, state, trenes_map, verbose)
 
 
 def _process_line(line: str, trains: list, n_trains: int,
-                  state: dict, trenes_map: dict, vmax_schedule: dict, verbose: bool):
+                  state: dict, trenes_map: dict, verbose: bool):
     """Procesa una línea de datos y actualiza trenes_map y state."""
     if not line.strip():
         return
     if RE_SKIP.search(line):
         return
 
-    # VMax running-state: se mantiene como fallback por si el schedule
-    # no cubre algún km (e.g., km con VMax muy lejos en el texto).
-    vmax = parse_vmax(line)
-    if vmax is not None:
-        state['vmax'] = vmax
-
-    # Sit_km de la región izquierda (primeros 15 chars)
     sitkm = parse_sitkm(line[:15])
 
-    # Primera posición de hora en la línea (separa región estación de tiempos)
     first_m = RE_HORA.search(line)
     first_time_pos = first_m.start() if first_m else len(line)
 
-    # Extraer nombre de estación antes de los tiempos
     station_region = line[:min(first_time_pos, 85)]
     station = extract_station(station_region)
 
-    # Extraer todos los tiempos de la línea completa
     times: list[tuple[str, int]] = []
     for m in RE_HORA.finditer(line):
         h_val = parse_hora(m.group(1), m.group(2))
@@ -460,11 +224,7 @@ def _process_line(line: str, trains: list, n_trains: int,
         state['cont_rows'] = 0 if times else 3
 
     elif sitkm is not None:
-        # Punto km sin estación → marcador intermedio de VMax en el trazado.
-        # Se añade como tramo a todos los trenes de la sección.
-        tramo_vmax = vmax_schedule.get(sitkm, state.get('vmax'))
-        for num in trains:
-            _add_tramo(trenes_map[num], sitkm, tramo_vmax)
+        # Punto km sin estación asociada → ignorar y resetear estado
         state['station'] = None
         state['sitkm'] = None
         state['cont_rows'] = 0
@@ -483,17 +243,15 @@ def _process_line(line: str, trains: list, n_trains: int,
 
     # ── Asignar tiempos a trenes (rank-based) ─────────────────────────────
     if times and active_station:
-        parada_vmax = (vmax_schedule.get(active_sitkm, state.get('vmax'))
-                       if active_sitkm is not None else state.get('vmax'))
         sorted_times = sorted(times, key=lambda x: x[1])
         for i, (hora, col) in enumerate(sorted_times[:n_trains]):
             num = trains[i]
             comercial = _is_comercial(line, hora, col)
             apd = '(APD)' in active_station
             _add_parada(trenes_map[num], active_station, hora,
-                        active_sitkm, parada_vmax, comercial, apd)
+                        active_sitkm, comercial, apd)
             if verbose:
-                print(f'    {num} @ {active_station}: {hora} km={active_sitkm} vmax={parada_vmax}')
+                print(f'    {num} @ {active_station}: {hora} km={active_sitkm}')
 
 
 # ── Parser principal ───────────────────────────────────────────────────────────
@@ -503,23 +261,13 @@ def parse_lh820(pdf_path: str, verbose: bool = False) -> list[dict]:
     pages = extract_pages(pdf_path)
     print(f'Paginas: {len(pages)}')
 
-    try:
-        import pytesseract  # noqa: F401
-        print('Extrayendo VMax con OCR (tesseract)...')
-        vmax_pages = extract_vmax_km_tesseract(pdf_path, pages)
-    except ImportError:
-        print('Tesseract no disponible, usando extracción posicional...')
-        vmax_pages = extract_all_vmax_km(pdf_path)
-
     trenes_map: dict[str, dict] = {}
 
     for i, page_text in enumerate(pages):
         if verbose:
             print(f'Pagina {i+1}:')
-        vmax_map = vmax_pages[i] if i < len(vmax_pages) else {}
-        parse_page(page_text, vmax_map, trenes_map, verbose=verbose)
+        parse_page(page_text, trenes_map, verbose=verbose)
 
-    # Ordenar paradas por hora
     result = []
     for tren in trenes_map.values():
         paradas = tren['paradas']
@@ -530,7 +278,6 @@ def parse_lh820(pdf_path: str, verbose: bool = False) -> list[dict]:
             p['orden'] = j
         result.append(tren)
 
-    # Stats
     total_p = sum(len(t['paradas']) for t in result)
     print(f'Trenes con paradas: {len(result)} | Total paradas: {total_p}')
     tipos: dict[str, int] = {}
