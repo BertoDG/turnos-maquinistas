@@ -152,62 +152,113 @@ def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
     tramos.append({'sit_km': sit_km, 'vmax': vmax})
 
 
-# ── VMax schedule por sección ────────────────────────────────────────────────
+# ── Extracción posicional VMax ────────────────────────────────────────────────
 
-def _build_vmax_schedule(section_lines: list, window: int = 8) -> dict:
+def extract_all_vmax_km(pdf_path: str) -> list[dict]:
     """
-    Construye {sit_km → vmax} emparejando por orden de aparición en el texto.
+    Usa get_charbox() para leer las coordenadas reales de cada carácter.
+    Agrupa por renglón visual (misma coordenada Y) y, dentro de cada renglón,
+    ordena por X (izquierda→derecha).  Así la columna VMax siempre aparece
+    antes que la columna km, independientemente del orden interno del PDF.
 
-    En este PDF, pypdfium2 extrae la columna VMax DESPUÉS del km/estación
-    del mismo renglón visual (el VMax llega en un bloque de texto separado).
-    Por eso, para un VMax en la línea Vi buscamos el km más cercano que lo
-    PRECEDA en el texto (ki ≤ Vi).  Si no hay ninguno previo, aceptamos el
-    siguiente (ki > Vi) como fallback.
-
-    Después propagamos hacia adelante para los km sin asignación directa
-    (puntos intermedios que heredan la velocidad del tramo anterior).
+    Devuelve una lista con un dict {sit_km → vmax} por página.
+    Solo incluye km donde VMax aparece explícitamente en el mismo renglón;
+    los km intermedios se propagan en _propagate_vmax().
     """
-    vmax_entries: list = []
-    km_entries:   list = []
+    import pypdfium2 as pdfium
 
-    for i, line in enumerate(section_lines):
-        v  = parse_vmax(line)
-        km = parse_sitkm(line[:15])
-        if v  is not None: vmax_entries.append((i, v))
-        if km is not None: km_entries.append((i, km))
+    doc    = pdfium.PdfDocument(pdf_path)
+    result = []
 
-    if not vmax_entries or not km_entries:
-        return {}
+    ROW_TOL  = 6    # tolerancia vertical en puntos PDF para mismo renglón
+    WORD_GAP = 2.0  # gap mínimo entre caracteres para insertar espacio
 
-    direct: dict = {}
-    used_ki: set = set()
+    for pg_idx in range(len(doc)):
+        page     = doc[pg_idx]
+        textpage = page.get_textpage()
+        n        = textpage.count_chars()
 
-    for vi, v in vmax_entries:
-        # Preferimos km que precede al VMax en el texto (ki ≤ Vi)
-        before = [(ki, km) for ki, km in km_entries
-                  if ki not in used_ki and ki <= vi and (vi - ki) <= window]
-        after  = [(ki, km) for ki, km in km_entries
-                  if ki not in used_ki and ki > vi  and (ki - vi) <= window]
+        if n == 0:
+            result.append({})
+            continue
 
-        candidates = before if before else after
-        if not candidates:
-            # ampliar búsqueda sin límite de ventana
-            candidates = [(ki, km) for ki, km in km_entries if ki not in used_ki]
+        # Recopilar (ch, left, right, y_center) por carácter
+        chars = []
+        for i in range(n):
+            box = textpage.get_charbox(i)   # (left, bottom, right, top)
+            ch  = textpage.get_text_range(i, 1)
+            if ch in ('\r', '\n', '\x00') or not ch.strip():
+                continue
+            y_ctr = (box[1] + box[3]) / 2
+            chars.append((ch, box[0], box[2], y_ctr))   # ch, left, right, y
 
-        if candidates:
-            best_ki, best_km = min(candidates, key=lambda x: abs(x[0] - vi))
-            direct[best_km] = v
-            used_ki.add(best_ki)
+        if not chars:
+            result.append({})
+            continue
 
-    # Propagación hacia adelante: km sin asignación directa hereda el anterior
-    full: dict = {}
+        # Ordenar top→bottom (y desc), luego left→right
+        chars.sort(key=lambda c: (-c[3], c[1]))
+
+        # Agrupar en renglones por Y
+        rows: list = []
+        cur:  list = []
+        row_y = None
+
+        for c in chars:
+            y = c[3]
+            if row_y is None or abs(y - row_y) <= ROW_TOL:
+                cur.append(c)
+                if row_y is None:
+                    row_y = y
+            else:
+                rows.append(cur)
+                cur   = [c]
+                row_y = y
+        if cur:
+            rows.append(cur)
+
+        # Para cada renglón: ordenar por X, reconstruir texto, extraer vmax+km
+        page_map: dict = {}
+
+        for row in rows:
+            row.sort(key=lambda c: c[1])    # por left
+            parts      = []
+            prev_right = None
+
+            for ch, left, right, y in row:
+                if prev_right is not None and (left - prev_right) > WORD_GAP:
+                    parts.append(' ')
+                parts.append(ch)
+                prev_right = right
+
+            row_text = ''.join(parts).strip()
+            v  = parse_vmax(row_text)
+            km = parse_sitkm(row_text)      # RE_SITKM solo casa X.Y (1 decimal) → no confunde tiempos
+            if v is not None and km is not None:
+                page_map[round(km, 1)] = v
+
+        result.append(page_map)
+
+    return result
+
+
+def _propagate_vmax(section_lines: list, vmax_map: dict) -> dict:
+    """
+    A partir del vmax_map posicional {km → vmax}, propaga hacia adelante
+    para todos los km de la sección (los km sin entrada directa heredan
+    el último valor visto).
+    """
+    full    = {}
     running = None
-    for _, km in km_entries:          # km_entries ya en orden de documento
-        if km in direct:
-            running = direct[km]
+    for line in section_lines:
+        km = parse_sitkm(line[:15])
+        if km is None:
+            continue
+        v = vmax_map.get(round(km, 1))
+        if v is not None:
+            running = v
         if running is not None:
             full[km] = running
-
     return full
 
 
@@ -227,21 +278,19 @@ def extract_pages(pdf_path: str) -> list[str]:
 
 # ── Procesado de páginas ──────────────────────────────────────────────────────
 
-def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
+def parse_page(page_text: str, vmax_map: dict, trenes_map: dict, verbose: bool = False):
     """Procesa el texto de una página PDF (puede tener 1 ó 2 secciones)."""
     if not RE_TREN.search(page_text):
         return
 
     lines = page_text.splitlines()
 
-    # Encontrar todas las líneas con 'Tipo:' Y números de tren → límites de sección
     tipo_sections: list[tuple[int, str]] = [
         (i, line)
         for i, line in enumerate(lines)
         if 'Tipo:' in line and RE_TREN.search(line)
     ]
 
-    # Páginas de continuación sin 'Tipo:' (MD_LLANES pág 2/2, etc.)
     if not tipo_sections:
         for i, line in enumerate(lines[:10]):
             if RE_TREN.search(line):
@@ -257,12 +306,10 @@ def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
             continue
         n_trains = len(trains)
 
-        # Límite de esta sección
         section_end = (tipo_sections[sec_num + 1][0]
                        if sec_num + 1 < len(tipo_sections)
                        else len(lines))
 
-        # Inicializar trenes
         for num in trains:
             if num not in trenes_map:
                 trenes_map[num] = {
@@ -280,10 +327,10 @@ def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
 
         section_lines = lines[tipo_idx + 1:section_end]
 
-        # Pre-escanear para asignar VMax a km por proximidad de línea
-        vmax_schedule = _build_vmax_schedule(section_lines)
+        # Usar mapa posicional si tiene datos; si no, el estado running-vmax
+        # de _process_line sirve como último recurso.
+        vmax_schedule = _propagate_vmax(section_lines, vmax_map) if vmax_map else {}
 
-        # Estado de continuación de estación (para EL BERRÓN / POLA DE SIERO)
         state: dict = {'station': None, 'sitkm': None, 'cont_rows': 0, 'vmax': None}
 
         for line in section_lines:
@@ -372,12 +419,16 @@ def parse_lh820(pdf_path: str, verbose: bool = False) -> list[dict]:
     pages = extract_pages(pdf_path)
     print(f'Paginas: {len(pages)}')
 
+    print('Extrayendo posiciones VMax...')
+    vmax_pages = extract_all_vmax_km(pdf_path)
+
     trenes_map: dict[str, dict] = {}
 
     for i, page_text in enumerate(pages):
         if verbose:
             print(f'Pagina {i+1}:')
-        parse_page(page_text, trenes_map, verbose=verbose)
+        vmax_map = vmax_pages[i] if i < len(vmax_pages) else {}
+        parse_page(page_text, vmax_map, trenes_map, verbose=verbose)
 
     # Ordenar paradas por hora
     result = []
