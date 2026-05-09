@@ -152,46 +152,32 @@ def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
     tramos.append({'sit_km': sit_km, 'vmax': vmax})
 
 
-# ── Extracción VMax por visión (Claude API) ───────────────────────────────────
+# ── Extracción VMax con OCR (pytesseract) ────────────────────────────────────
 
-def extract_vmax_km_vision(pdf_path: str, pages_text: list) -> list[dict]:
+def extract_vmax_km_tesseract(pdf_path: str, pages_text: list) -> list[dict]:
     """
-    Renderiza cada página como imagen JPEG y llama a Claude Vision para
-    extraer los pares {sit_km → vmax} de la columna VMax.
+    Renderiza cada página a imagen (pypdfium2) y usa pytesseract para
+    localizar tokens numéricos con su posición (x, y) en píxeles.
 
-    Requiere ANTHROPIC_API_KEY en el entorno y Pillow instalado.
-    Devuelve lista de dicts {sit_km (redondeado a 1 decimal): vmax} por página.
+    Para cada renglón visual (mismo Y ± tolerancia):
+      - Identifica el VMax: entero múltiplo de 5 entre 10-220
+      - Identifica el km: decimal con un dígito (ej. 49.7)
+    Y construye el mapa {sit_km → vmax} por página.
+
+    Requiere: pip install pytesseract Pillow
+              + Tesseract instalado (https://github.com/UB-Mannheim/tesseract/wiki)
     """
     import pypdfium2 as pdfium
-    import anthropic
-    import base64
-    import io
-    import json
+    import pytesseract
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
-    if not api_key:
-        print('AVISO: ANTHROPIC_API_KEY no definida, saltando visión')
-        return [{} for _ in pages_text]
+    # En Windows Tesseract se instala aquí por defecto
+    tess_win = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    if os.path.exists(tess_win):
+        pytesseract.pytesseract.tesseract_cmd = tess_win
 
-    try:
-        from PIL import Image  # noqa: F401
-    except ImportError:
-        print('AVISO: Pillow no instalado (pip install Pillow), saltando visión')
-        return [{} for _ in pages_text]
-
-    doc    = pdfium.PdfDocument(pdf_path)
-    client = anthropic.Anthropic(api_key=api_key)
-    result = []
-
-    PROMPT = (
-        'Esta imagen es una página de un horario ferroviario RENFE (LH-820 Anejo 5).\n'
-        'La tabla tiene columnas: VMax | Sit Km | Dependencia | Hora...\n'
-        'Extrae ÚNICAMENTE las filas donde la columna VMax tiene un número '
-        '(ignora las filas donde esa celda está vacía).\n'
-        'Devuelve SOLO un array JSON sin texto adicional:\n'
-        '[{"sit_km": 49.7, "vmax": 70}, {"sit_km": 48.4, "vmax": 100}]\n'
-        'Si la página no contiene esta tabla devuelve [].'
-    )
+    doc     = pdfium.PdfDocument(pdf_path)
+    result  = []
+    ROW_TOL = 12   # píxeles de margen vertical para el mismo renglón (scale=2 → ~6pt)
 
     for pg_idx in range(len(doc)):
         page_text = pages_text[pg_idx] if pg_idx < len(pages_text) else ''
@@ -199,45 +185,50 @@ def extract_vmax_km_vision(pdf_path: str, pages_text: list) -> list[dict]:
             result.append({})
             continue
 
-        page   = doc[pg_idx]
-        bitmap = page.render(scale=2.0)
+        page    = doc[pg_idx]
+        bitmap  = page.render(scale=2.0)
         pil_img = bitmap.to_pil()
 
-        buf = io.BytesIO()
-        pil_img.save(buf, format='JPEG', quality=82)
-        img_b64 = base64.standard_b64encode(buf.getvalue()).decode()
+        data = pytesseract.image_to_data(
+            pil_img,
+            config='--psm 6 --oem 3',
+            output_type=pytesseract.Output.DICT,
+        )
 
-        try:
-            msg = client.messages.create(
-                model='claude-haiku-4-5-20251001',
-                max_tokens=2048,
-                messages=[{
-                    'role': 'user',
-                    'content': [
-                        {
-                            'type': 'image',
-                            'source': {
-                                'type': 'base64',
-                                'media_type': 'image/jpeg',
-                                'data': img_b64,
-                            },
-                        },
-                        {'type': 'text', 'text': PROMPT},
-                    ],
-                }],
-            )
-            raw = msg.content[0].text.strip()
-            # Extraer el JSON aunque venga envuelto en markdown
-            json_match = re.search(r'\[.*\]', raw, re.DOTALL)
-            pairs = json.loads(json_match.group(0)) if json_match else []
-            page_map = {
-                round(float(p['sit_km']), 1): int(p['vmax'])
-                for p in pairs
-                if 'sit_km' in p and 'vmax' in p
-            }
-        except Exception as e:
-            print(f'  Pagina {pg_idx + 1}: error visión ({e})')
-            page_map = {}
+        # Recopilar tokens con confianza suficiente
+        vmax_tokens = []   # (x, y, valor)
+        km_tokens   = []   # (x, y, valor)
+
+        for i, text in enumerate(data['text']):
+            text = text.strip().replace(',', '.')   # OCR a veces da coma decimal
+            if not text or int(data['conf'][i]) < 30:
+                continue
+
+            x = data['left'][i]
+            y = data['top'][i]
+
+            # ¿Es un VMax válido? (entero múltiplo de 5, 10-220)
+            try:
+                v = int(text)
+                if v in _VALID_VMAX:
+                    vmax_tokens.append((x, y, v))
+            except ValueError:
+                pass
+
+            # ¿Es un km? (formato X.Y con un solo decimal)
+            km_val = parse_sitkm(text)
+            if km_val is not None:
+                km_tokens.append((x, y, km_val))
+
+        # Emparejar VMax con km del mismo renglón visual
+        page_map: dict = {}
+        for vx, vy, v in vmax_tokens:
+            mismo_renglon = [(kx, ky, km) for kx, ky, km in km_tokens
+                             if abs(ky - vy) <= ROW_TOL]
+            if mismo_renglon:
+                # El km más cercano en Y
+                _, _, km_val = min(mismo_renglon, key=lambda k: abs(k[1] - vy))
+                page_map[round(km_val, 1)] = v
 
         result.append(page_map)
         print(f'  Pag {pg_idx + 1}: {len(page_map)} pares vmax-km')
@@ -245,7 +236,7 @@ def extract_vmax_km_vision(pdf_path: str, pages_text: list) -> list[dict]:
     return result
 
 
-# ── Extracción posicional VMax (fallback) ─────────────────────────────────────
+# ── Extracción posicional VMax (fallback sin dependencias externas) ────────────
 
 def extract_all_vmax_km(pdf_path: str) -> list[dict]:
     """
@@ -512,11 +503,12 @@ def parse_lh820(pdf_path: str, verbose: bool = False) -> list[dict]:
     pages = extract_pages(pdf_path)
     print(f'Paginas: {len(pages)}')
 
-    if os.environ.get('ANTHROPIC_API_KEY'):
-        print('Extrayendo VMax por visión (Claude)...')
-        vmax_pages = extract_vmax_km_vision(pdf_path, pages)
-    else:
-        print('Extrayendo VMax por posición de caracteres...')
+    try:
+        import pytesseract  # noqa: F401
+        print('Extrayendo VMax con OCR (tesseract)...')
+        vmax_pages = extract_vmax_km_tesseract(pdf_path, pages)
+    except ImportError:
+        print('Tesseract no disponible, usando extracción posicional...')
         vmax_pages = extract_all_vmax_km(pdf_path)
 
     trenes_map: dict[str, dict] = {}
