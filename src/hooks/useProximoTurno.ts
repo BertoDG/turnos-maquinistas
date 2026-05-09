@@ -77,13 +77,20 @@ interface AsignacionConServicios extends Asignacion {
   }
 }
 
+// Tipo ligero para búsqueda de próximo turno lejano
+interface AsignacionLigera {
+  fecha: string
+  turno?: { numero: string; tipo: string; hora_inicio: string | null }
+}
+
 export function useProximoTurno(userId: string | undefined): {
   clockNow: Date
   status:   TurnoStatus
 } {
-  const [clockNow,   setClockNow]  = useState(() => new Date())
-  const [statusNow,  setStatusNow] = useState(() => new Date())
-  const [asignaciones, setAsi]     = useState<AsignacionConServicios[]>([])
+  const [clockNow,    setClockNow]  = useState(() => new Date())
+  const [statusNow,   setStatusNow] = useState(() => new Date())
+  const [asignaciones, setAsi]      = useState<AsignacionConServicios[]>([])
+  const [asigFutura,  setAsigFut]   = useState<AsignacionLigera[]>([])
 
   // Reloj visual: cada segundo
   useEffect(() => {
@@ -97,7 +104,7 @@ export function useProximoTurno(userId: string | undefined): {
     return () => clearInterval(t)
   }, [])
 
-  // Cargar asignaciones (ayer + hoy + 7 días), incluyendo servicios del turno
+  // Cargar asignaciones (ayer + 7 días) con servicios — para detección "en turno"
   useEffect(() => {
     if (!userId) return
     const ayer  = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
@@ -121,8 +128,25 @@ export function useProximoTurno(userId: string | undefined): {
       .then(({ data }) => { if (data) setAsi(data as AsignacionConServicios[]) })
   }, [userId])
 
+  // Cargar próximas asignaciones (90 días) sin servicios — para "próximo turno" lejano
+  useEffect(() => {
+    if (!userId) return
+    const hoy   = new Date().toISOString().slice(0, 10)
+    const hasta = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10)
+
+    supabase
+      .from('asignaciones')
+      .select('fecha, turno:turnos!asignaciones_turno_id_fkey(numero, tipo, hora_inicio)')
+      .eq('maquinista_id', userId)
+      .gte('fecha', hoy)
+      .lte('fecha', hasta)
+      .order('fecha')
+      .then(({ data }) => { if (data) setAsigFut(data as AsignacionLigera[]) })
+  }, [userId])
+
   const status = useMemo<TurnoStatus>(() => {
     const TIPOS_TRABAJO = new Set(['servicio', 'guardia', 'especial', 'jornada_turno'])
+
 
     // ── ¿Estamos en turno ahora? ──────────────────────────────
     for (const asig of asignaciones) {
@@ -211,16 +235,24 @@ export function useProximoTurno(userId: string | undefined): {
       }
     }
 
-    // ── Próximo turno ─────────────────────────────────────────
-    for (const asig of asignaciones) {
+    // ── Próximo turno (ventana corta primero, luego ventana larga) ────────────
+    const candidatos = [
+      ...asignaciones.map(a => ({ fecha: a.fecha, turno: a.turno })),
+      ...asigFutura,
+    ]
+    const vistos = new Set<string>()
+    for (const asig of candidatos) {
       const t = asig.turno
       if (!t || !t.hora_inicio) continue
       if (!TIPOS_TRABAJO.has(t.tipo)) continue
+      const key = `${asig.fecha}-${t.numero}`
+      if (vistos.has(key)) continue
+      vistos.add(key)
       const inicio = toDatetime(asig.fecha, t.hora_inicio)
       if (inicio > statusNow) {
         const mins = Math.round((inicio.getTime() - statusNow.getTime()) / 60_000)
         return {
-          tipo: 'proximo',
+          tipo:         'proximo',
           turnoNumero:  t.numero,
           minutosHasta: mins,
           fechaHora:    formatFechaHora(asig.fecha, t.hora_inicio),
@@ -229,7 +261,7 @@ export function useProximoTurno(userId: string | undefined): {
     }
 
     return null
-  }, [statusNow, asignaciones])
+  }, [statusNow, asignaciones, asigFutura])
 
   return { clockNow, status }
 }
