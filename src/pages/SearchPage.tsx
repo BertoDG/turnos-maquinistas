@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 import type { Profile } from '@/types'
 import { getInitials } from '@/lib/utils'
 import {
   Loader2, ChevronRight, X, AlertCircle,
-  ArrowLeft, Train, MapPin, Clock,
+  ArrowLeft, Train, MapPin, Clock, EyeOff,
 } from 'lucide-react'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
@@ -13,10 +14,11 @@ import {
 type SearchMode = 'conductor' | 'turno' | 'tren'
 
 interface ResultItem {
-  profile:     Profile
+  profile:      Profile
   turnoNumero?: string
   trenNumero?:  string
   fecha?:       string
+  privado?:     boolean   // true = maquinista no comparte; ocultar identidad
 }
 
 interface ServicioRow {
@@ -142,24 +144,37 @@ function TurnoDetailView({ item, onBack }: { item: ResultItem; onBack: () => voi
           <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
 
-        {/* Avatar */}
-        <div className="w-9 h-9 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
-          flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
-          {item.profile.avatar_url
-            ? <img src={item.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-            : getInitials(item.profile.nombre, item.profile.apellidos)
-          }
-        </div>
-
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
-            {item.profile.nombre} {item.profile.apellidos}
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {item.profile.matricula}
-            {item.profile.depot ? ` · ${item.profile.depot}` : ''}
-          </p>
-        </div>
+        {item.privado ? (
+          <>
+            <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-700
+              flex items-center justify-center shrink-0">
+              <EyeOff className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-400 dark:text-gray-500 italic">Maquinista privado</p>
+              <p className="text-xs text-gray-400 dark:text-gray-600">Información no disponible</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
+              flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
+              {item.profile.avatar_url
+                ? <img src={item.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                : getInitials(item.profile.nombre, item.profile.apellidos)
+              }
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
+                {item.profile.nombre} {item.profile.apellidos}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {item.profile.matricula}
+                {item.profile.depot ? ` · ${item.profile.depot}` : ''}
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Contenido */}
@@ -445,7 +460,9 @@ function TrenDetailView({ trenNumero, onBack }: { trenNumero: string; onBack: ()
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function SearchPage() {
-  const navigate = useNavigate()
+  const navigate  = useNavigate()
+  const { profile: myProfile } = useAuth()
+  const isSuperadmin = myProfile?.role === 'superadmin'
 
   const [mode,         setMode]         = useState<SearchMode>('conductor')
   const [query,        setQuery]        = useState('')
@@ -541,20 +558,23 @@ export default function SearchPage() {
     for (const a of (data ?? [])) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const turnoNum = (a.turno as any)?.numero as string | undefined
-      const key = `${a.maquinista_id}-${turnoNum ?? ''}`
+      const maq      = a.maquinista as unknown as Profile | null
+      if (!maq) continue
+
+      const isOwn  = maq.id === myProfile?.id
+      const privado = !isSuperadmin && !maq.turnos_visibles && !isOwn
+
+      // Entradas privadas: se agrupan por turno (ocultamos quién es)
+      const key = privado ? `PRIV-${turnoNum ?? ''}` : `${maq.id}-${turnoNum ?? ''}`
       if (seen.has(key)) continue
       seen.add(key)
-      if (a.maquinista) {
-        out.push({
-          profile:     a.maquinista as unknown as Profile,
-          turnoNumero: turnoNum,
-          fecha:       a.fecha,
-        })
-      }
+
+      out.push({ profile: maq, turnoNumero: turnoNum, fecha: a.fecha, privado })
     }
 
     out.sort((a, b) =>
       (a.turnoNumero ?? '').localeCompare(b.turnoNumero ?? '', undefined, { numeric: true }) ||
+      (a.privado === b.privado ? 0 : a.privado ? 1 : -1) ||
       (a.profile.apellidos ?? '').localeCompare(b.profile.apellidos ?? '')
     )
     setAllData(out)
@@ -598,25 +618,31 @@ export default function SearchPage() {
     const out: ResultItem[] = []
 
     for (const a of (asigData ?? [])) {
+      const maq    = a.maquinista as unknown as Profile | null
+      if (!maq) continue
+      const isOwn  = maq.id === myProfile?.id
+      const privado = !isSuperadmin && !maq.turnos_visibles && !isOwn
+
       const trenes = turnoTrenes.get(a.turno_id as number) ?? new Set<string>()
       for (const tren of trenes) {
-        const key = `${a.maquinista_id}-${tren}`
+        // Entradas privadas: se agrupan por tren (ocultamos quién es)
+        const key = privado ? `PRIV-${tren}` : `${maq.id}-${tren}`
         if (seen.has(key)) continue
         seen.add(key)
-        if (a.maquinista) {
-          out.push({
-            profile:     a.maquinista as unknown as Profile,
-            trenNumero:  tren,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            turnoNumero: (a.turno as any)?.numero,
-            fecha:       a.fecha,
-          })
-        }
+        out.push({
+          profile:     maq,
+          trenNumero:  tren,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          turnoNumero: (a.turno as any)?.numero,
+          fecha:       a.fecha,
+          privado,
+        })
       }
     }
 
     out.sort((a, b) =>
       (a.trenNumero ?? '').localeCompare(b.trenNumero ?? '', undefined, { numeric: true }) ||
+      (a.privado === b.privado ? 0 : a.privado ? 1 : -1) ||
       (a.profile.apellidos ?? '').localeCompare(b.profile.apellidos ?? '')
     )
     setAllData(out)
@@ -735,35 +761,63 @@ export default function SearchPage() {
               ) : (
                 filtered.map((r, i) => (
                   <button
-                    key={`${r.profile.id}-${r.turnoNumero ?? ''}-${r.trenNumero ?? ''}-${i}`}
+                    key={`${r.privado ? 'priv' : r.profile.id}-${r.turnoNumero ?? ''}-${r.trenNumero ?? ''}-${i}`}
                     onClick={() => handleResultClick(r)}
                     className="w-full flex items-center gap-3 px-4 py-3.5
                       hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 transition-colors text-left"
                   >
-                    {/* Avatar */}
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
-                      flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
-                      {r.profile.avatar_url
-                        ? <img src={r.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                        : getInitials(r.profile.nombre, r.profile.apellidos)
-                      }
-                    </div>
-
-                    {/* Datos */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                        {r.profile.nombre} {r.profile.apellidos}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                        {r.profile.matricula}
-                        {r.profile.depot    ? ` · ${r.profile.depot}`          : ''}
-                        {r.turnoNumero      ? ` · T.${r.turnoNumero}`          : ''}
-                        {r.trenNumero       ? ` · Tren ${r.trenNumero}`        : ''}
-                        {r.fecha            ? ` · ${formatFecha(r.fecha)}`     : ''}
-                      </p>
-                    </div>
-
-                    <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />
+                    {r.privado ? (
+                      /* Entrada anónima */
+                      <>
+                        <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700
+                          flex items-center justify-center shrink-0">
+                          <EyeOff className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-400 dark:text-gray-500 italic truncate">
+                            Maquinista privado
+                          </p>
+                          <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
+                            {r.turnoNumero ? `T.${r.turnoNumero}` : ''}
+                            {r.trenNumero  ? `Tren ${r.trenNumero}` : ''}
+                            {r.fecha       ? ` · ${formatFecha(r.fecha)}` : ''}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-200 dark:text-gray-700 shrink-0" />
+                      </>
+                    ) : (
+                      /* Entrada pública */
+                      <>
+                        <div className="w-10 h-10 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
+                          flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
+                          {r.profile.avatar_url
+                            ? <img src={r.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                            : getInitials(r.profile.nombre, r.profile.apellidos)
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                              {r.profile.nombre} {r.profile.apellidos}
+                            </p>
+                            {mode === 'conductor' && r.profile.turnos_visibles && (
+                              <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full
+                                bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                Comparte
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {r.profile.matricula}
+                            {r.profile.depot ? ` · ${r.profile.depot}`      : ''}
+                            {r.turnoNumero   ? ` · T.${r.turnoNumero}`      : ''}
+                            {r.trenNumero    ? ` · Tren ${r.trenNumero}`    : ''}
+                            {r.fecha         ? ` · ${formatFecha(r.fecha)}` : ''}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />
+                      </>
+                    )}
                   </button>
                 ))
               )}

@@ -9,6 +9,7 @@ import { Loader2, AlertCircle, CalendarDays, EyeOff } from 'lucide-react'
 export default function CalendarPage() {
   const { profile }      = useAuth()
   const { maquinistaId } = useParams()
+  const isSuperadmin     = profile?.role === 'superadmin'
 
   const targetId = maquinistaId || profile?.id
 
@@ -24,13 +25,14 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!maquinistaId) { setPrivacyBlocked(false); return }
+    if (isSuperadmin)  { setPrivacyBlocked(false); return }
     supabase
       .from('profiles')
       .select('turnos_visibles')
       .eq('id', maquinistaId)
       .single()
       .then(({ data }) => setPrivacyBlocked(!data?.turnos_visibles))
-  }, [maquinistaId])
+  }, [maquinistaId, isSuperadmin])
 
   const now = new Date()
 
