@@ -154,14 +154,18 @@ def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
 
 # ── VMax schedule por sección ────────────────────────────────────────────────
 
-def _build_vmax_schedule(section_lines: list, window: int = 4) -> dict:
+def _build_vmax_schedule(section_lines: list, window: int = 8) -> dict:
     """
-    Construye {sit_km → vmax} usando coincidencia por proximidad de líneas.
+    Construye {sit_km → vmax} emparejando por orden de aparición en el texto.
 
-    pypdfium2 puede extraer el texto de la columna VMax en líneas separadas
-    de las del km/estación del mismo renglón visual.  Este pre-escaneo
-    empareja cada entrada VMax con el km más cercano (dentro de `window`
-    líneas) y luego propaga el valor hacia adelante para los km intermedios.
+    En este PDF, pypdfium2 extrae la columna VMax DESPUÉS del km/estación
+    del mismo renglón visual (el VMax llega en un bloque de texto separado).
+    Por eso, para un VMax en la línea Vi buscamos el km más cercano que lo
+    PRECEDA en el texto (ki ≤ Vi).  Si no hay ninguno previo, aceptamos el
+    siguiente (ki > Vi) como fallback.
+
+    Después propagamos hacia adelante para los km sin asignación directa
+    (puntos intermedios que heredan la velocidad del tramo anterior).
     """
     vmax_entries: list = []
     km_entries:   list = []
@@ -175,20 +179,30 @@ def _build_vmax_schedule(section_lines: list, window: int = 4) -> dict:
     if not vmax_entries or not km_entries:
         return {}
 
-    # Asignación directa: cada VMax → km más cercano dentro del margen
     direct: dict = {}
+    used_ki: set = set()
+
     for vi, v in vmax_entries:
-        nearby = [(ki, km) for ki, km in km_entries if abs(ki - vi) <= window]
-        if nearby:
-            _, closest_km = min(nearby, key=lambda x: abs(x[0] - vi))
-            # Si dos VMax compiten por el mismo km, gana el más cercano
-            if closest_km not in direct or abs(vi - next(ki for ki, k in km_entries if k == closest_km)) < window:
-                direct[closest_km] = v
+        # Preferimos km que precede al VMax en el texto (ki ≤ Vi)
+        before = [(ki, km) for ki, km in km_entries
+                  if ki not in used_ki and ki <= vi and (vi - ki) <= window]
+        after  = [(ki, km) for ki, km in km_entries
+                  if ki not in used_ki and ki > vi  and (ki - vi) <= window]
+
+        candidates = before if before else after
+        if not candidates:
+            # ampliar búsqueda sin límite de ventana
+            candidates = [(ki, km) for ki, km in km_entries if ki not in used_ki]
+
+        if candidates:
+            best_ki, best_km = min(candidates, key=lambda x: abs(x[0] - vi))
+            direct[best_km] = v
+            used_ki.add(best_ki)
 
     # Propagación hacia adelante: km sin asignación directa hereda el anterior
     full: dict = {}
     running = None
-    for _, km in km_entries:          # km_entries ya está en orden de documento
+    for _, km in km_entries:          # km_entries ya en orden de documento
         if km in direct:
             running = direct[km]
         if running is not None:
@@ -197,92 +211,17 @@ def _build_vmax_schedule(section_lines: list, window: int = 4) -> dict:
     return full
 
 
-# ── Extracción de texto con posición visual ───────────────────────────────────
+# ── Extracción de texto ────────────────────────────────────────────────────────
 
 def extract_pages(pdf_path: str) -> list[str]:
-    """
-    Extrae texto de cada página respetando el orden visual izquierda→derecha,
-    arriba→abajo, usando las coordenadas bbox de cada carácter.
-
-    pypdfium2 devuelve caracteres en orden interno del PDF, que para tablas
-    multi-columna es diferente al orden visual: la columna VMax (izquierda)
-    puede aparecer en el flujo de texto DESPUÉS de la columna Sit Km.
-    Reagrupar por fila Y y ordenar cada fila por X corrige esto.
-    """
+    """Devuelve la lista de textos de cada página del PDF usando pypdfium2."""
     import pypdfium2 as pdfium
-
-    doc   = pdfium.PdfDocument(pdf_path)
+    doc = pdfium.PdfDocument(pdf_path)
     pages = []
-
-    ROW_TOL = 4    # tolerancia vertical (puntos PDF) para mismo renglón
-    GAP_FAC = 0.4  # fracción de altura de carácter para insertar espacio
-
     for pg_idx in range(len(doc)):
-        page     = doc[pg_idx]
+        page = doc[pg_idx]
         textpage = page.get_textpage()
-        n        = textpage.count_chars()
-
-        if n == 0:
-            pages.append('')
-            continue
-
-        # Recopilar (ch, left, bottom, right, top) para cada carácter
-        chars = []
-        for i in range(n):
-            box = textpage.get_charbox(i)   # (left, bottom, right, top)
-            ch  = textpage.get_text_range(i, 1)
-            if ch in ('\r', '\n'):
-                continue
-            chars.append((ch, box[0], box[1], box[2], box[3]))
-
-        if not chars:
-            pages.append('')
-            continue
-
-        # Ordenar de arriba a abajo (top desc, ya que Y=0 es la base del PDF)
-        chars.sort(key=lambda c: -c[4])
-
-        # Agrupar en filas: caracteres con top similar forman el mismo renglón
-        rows: list = []
-        cur_row: list = []
-        row_y = None
-
-        for c in chars:
-            y_top = c[4]
-            if row_y is None or abs(y_top - row_y) <= ROW_TOL:
-                cur_row.append(c)
-                if row_y is None:
-                    row_y = y_top
-            else:
-                rows.append(cur_row)
-                cur_row = [c]
-                row_y   = y_top
-
-        if cur_row:
-            rows.append(cur_row)
-
-        # Ordenar cada fila por X (izquierda→derecha) e insertar espacios
-        text_lines = []
-        for row in rows:
-            row.sort(key=lambda c: c[1])   # por coordenada left
-            parts = []
-            prev_right = None
-
-            for ch, left, bottom, right, top in row:
-                if prev_right is not None:
-                    gap    = left - prev_right
-                    height = (top - bottom) if top > bottom else 8.0
-                    if gap > height * GAP_FAC:
-                        parts.append(' ')
-                parts.append(ch)
-                prev_right = right
-
-            line = ''.join(parts).strip()
-            if line:
-                text_lines.append(line)
-
-        pages.append('\n'.join(text_lines))
-
+        pages.append(textpage.get_text_range())
     return pages
 
 
