@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCalendar } from '@/hooks/useCalendar'
+import { supabase } from '@/lib/supabase'
 import MonthCalendar from '@/components/calendar/MonthCalendar'
-import { Loader2, AlertCircle, CalendarDays } from 'lucide-react'
+import { Loader2, AlertCircle, CalendarDays, EyeOff } from 'lucide-react'
 
 export default function CalendarPage() {
   const { profile }      = useAuth()
@@ -17,6 +18,19 @@ export default function CalendarPage() {
 
   const monthRefs   = useRef<Map<string, HTMLDivElement>>(new Map())
   const scrolledRef = useRef(false)
+
+  // null = comprobando, false = visible, true = bloqueado por privacidad
+  const [privacyBlocked, setPrivacyBlocked] = useState<boolean | null>(maquinistaId ? null : false)
+
+  useEffect(() => {
+    if (!maquinistaId) { setPrivacyBlocked(false); return }
+    supabase
+      .from('profiles')
+      .select('turnos_visibles')
+      .eq('id', maquinistaId)
+      .single()
+      .then(({ data }) => setPrivacyBlocked(!data?.turnos_visibles))
+  }, [maquinistaId])
 
   const now = new Date()
 
@@ -50,11 +64,27 @@ export default function CalendarPage() {
     el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  if (loading) {
+  if (loading || privacyBlocked === null) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3">
         <Loader2 className="w-8 h-8 text-red-500 animate-spin" />
         <p className="text-sm text-gray-500">Cargando turnos…</p>
+      </div>
+    )
+  }
+
+  if (privacyBlocked) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-3 px-6">
+        <div className="w-14 h-14 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+          <EyeOff className="w-7 h-7 text-gray-400" />
+        </div>
+        <p className="text-base font-medium text-gray-800 dark:text-gray-200 text-center">
+          Calendario privado
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+          Este maquinista no ha activado el uso compartido de su calendario.
+        </p>
       </div>
     )
   }

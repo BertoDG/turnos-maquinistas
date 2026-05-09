@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDeudas } from '@/hooks/useDeudas'
 import type { Profile } from '@/types'
-import { Search, Train, ChevronRight, Users, Loader2 } from 'lucide-react'
+import { Search, Train, ChevronRight, Users, Loader2, Eye } from 'lucide-react'
 import { getInitials } from '@/lib/utils'
 
 export default function ColleaguesPage() {
@@ -127,6 +127,13 @@ export default function ColleaguesPage() {
                         </p>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <p className="text-xs text-gray-500">Matrícula: {person.matricula}</p>
+                          {person.turnos_visibles && (
+                            <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full
+                              bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                              <Eye className="w-2.5 h-2.5" />
+                              Comparte
+                            </span>
+                          )}
                           {bal && bal.meDebeCount > 0 && (
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full
                               bg-green-100 text-green-700">

@@ -45,6 +45,7 @@ export interface Profile {
   depot: string | null
   role: UserRole
   activo: boolean
+  turnos_visibles: boolean
   avatar_url: string | null
   telefono: string | null
   observaciones: string | null

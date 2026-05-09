@@ -160,6 +160,21 @@ export default function ProfilePage() {
     setTimeout(() => { setEditingProfile(false); setEditSaved(false) }, 800)
   }
 
+  // ── Privacidad: compartir turnos ─────────────────────────────────────────────
+  const [togglingVisibles, setTogglingVisibles] = useState(false)
+
+  async function handleToggleTurnosVisibles() {
+    if (!profile) return
+    setTogglingVisibles(true)
+    const next = !profile.turnos_visibles
+    await supabase
+      .from('profiles')
+      .update({ turnos_visibles: next, updated_at: new Date().toISOString() })
+      .eq('id', profile.id)
+    await refreshProfile()
+    setTogglingVisibles(false)
+  }
+
   // ── Cambio de contraseña ─────────────────────────────────────
   const [showPassForm,  setShowPassForm]  = useState(false)
   const [passForm,      setPassForm]      = useState({ nueva: '', confirmar: '' })
@@ -510,6 +525,40 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      {/* ── Privacidad ─────────────────────────────────────── */}
+      <button
+        onClick={handleToggleTurnosVisibles}
+        disabled={togglingVisibles}
+        className="flex items-center justify-between w-full px-4 py-4
+          bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700
+          active:bg-gray-50 dark:active:bg-gray-700 transition-colors disabled:opacity-60"
+      >
+        <div className="flex items-center gap-3 text-left">
+          <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center shrink-0">
+            {profile.turnos_visibles
+              ? <Eye className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              : <EyeOff className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            }
+          </div>
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-white">Compartir mis turnos</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+              {profile.turnos_visibles
+                ? 'Otros maquinistas pueden ver tu calendario'
+                : 'Solo tú puedes ver tu calendario'
+              }
+            </p>
+          </div>
+        </div>
+        <div className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ml-3
+          ${profile.turnos_visibles ? 'bg-red-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+        >
+          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform
+            ${profile.turnos_visibles ? 'translate-x-5' : 'translate-x-0.5'}`}
+          />
+        </div>
+      </button>
 
       {/* ── Cambiar contraseña ──────────────────────────────── */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex flex-col gap-3">
