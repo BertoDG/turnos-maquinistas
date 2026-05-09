@@ -9,7 +9,7 @@ import { useEstaciones } from '@/hooks/useEstaciones'
 import { useColorPrefs } from '@/contexts/ColorPrefsContext'
 import TrainDetailSheet from '@/components/TrainDetailSheet'
 import {
-  Train, Clock, MapPin, Bed, Umbrella, ArrowRight,
+  Train, Clock, Bed, Umbrella, ArrowRight,
   Loader2, CalendarDays, ArrowLeftRight, Info,
   ChevronLeft, ChevronRight, Shield, RotateCcw, AlertTriangle,
 } from 'lucide-react'
@@ -722,6 +722,8 @@ function fmtMin(m: number): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
+interface ParadaLh { hora: string | null; estacion: string }
+
 function ShiftProgress({
   horaInicio,
   horaFin,
@@ -748,6 +750,29 @@ function ShiftProgress({
     return () => clearInterval(id)
   }, [])
 
+  // Paradas de lh_trenes para los trenes del turno
+  const [paradasMap, setParadasMap] = useState<Record<string, ParadaLh[]>>({})
+
+  useEffect(() => {
+    const numeros = servicios
+      .map(s => s.numero_tren)
+      .filter((n): n is string => !!n && n !== 'SC')
+    if (numeros.length === 0) return
+
+    supabase
+      .from('lh_trenes')
+      .select('numero, paradas')
+      .in('numero', numeros)
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, ParadaLh[]> = {}
+        for (const tren of data) {
+          map[tren.numero] = (tren.paradas as ParadaLh[]) ?? []
+        }
+        setParadasMap(map)
+      })
+  }, [servicios])
+
   const startMin = toMin(horaInicio)
   let endMin = toMin(horaFin)
   if (endMin <= startMin) endMin += 1440
@@ -761,7 +786,7 @@ function ShiftProgress({
   const isActive = adjNow >= startMin && adjNow <= endMin
 
   // Construir lista de eventos
-  interface Ev { min: number; label: string; sub?: string }
+  interface Ev { min: number; label: string; sub?: string; trenNumero?: string }
   const evs: Ev[] = [{ min: startMin, label: 'Presentación' }]
 
   for (const s of servicios) {
@@ -774,6 +799,7 @@ function ShiftProgress({
       min: dep,
       label: s.numero_tren === 'SC' ? 'Guardia' : `Tren ${s.numero_tren}`,
       sub: `${nombreEstacion(s.origen)} → ${nombreEstacion(s.destino)}`,
+      trenNumero: s.numero_tren && s.numero_tren !== 'SC' ? s.numero_tren : undefined,
     })
     evs.push({ min: arr, label: nombreEstacion(s.destino) })
   }
@@ -813,6 +839,21 @@ function ShiftProgress({
             : nowInSeg ? nowFrac
             : adjNow >= (next?.min ?? Infinity) ? 1
             : 0
+
+          // Próxima parada del tren activo
+          let nextParada: string | null = null
+          if (nowInSeg && ev.trenNumero) {
+            const paradas = paradasMap[ev.trenNumero] ?? []
+            const depMin  = ev.min % 1440  // hora real de salida (sin ajuste nocturno)
+            const found   = paradas.find(p => {
+              if (!p.hora) return false
+              let pMin = toMin(p.hora)
+              // Corrección nocturna: si la parada es antes de la salida del tren, es del día siguiente
+              if (pMin < depMin) pMin += 1440
+              return pMin > adjNow
+            })
+            nextParada = found?.estacion ?? null
+          }
 
           return (
             <div key={i} className="flex">
@@ -880,19 +921,27 @@ function ShiftProgress({
                   </span>
                 </div>
 
-                {/* Espacio del segmento con etiqueta «ahora» alineada al punto pulsante */}
+                {/* Espacio del segmento con etiqueta «ahora» + próxima parada */}
                 {!isLast && (
                   <div className="relative" style={{ height: SEG_H }}>
                     {nowInSeg && (
                       <div
-                        className="absolute flex items-center gap-1"
+                        className="absolute flex items-center gap-1 min-w-0 pr-2"
                         style={{ top: `${nowFrac * 100}%`, transform: 'translateY(-50%)' }}
                       >
-                        <span className="text-xs font-bold tabular-nums"
+                        <span className="text-xs font-bold tabular-nums shrink-0"
                           style={{ color: accentColor }}>
                           {fmtMin(adjNow)}
                         </span>
-                        <span className="text-[10px] text-gray-400">ahora</span>
+                        <span className="text-[10px] text-gray-400 shrink-0">ahora</span>
+                        {nextParada && (
+                          <>
+                            <span className="text-[10px] text-gray-300 dark:text-gray-600 shrink-0">·</span>
+                            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 truncate">
+                              → {nextParada}
+                            </span>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
