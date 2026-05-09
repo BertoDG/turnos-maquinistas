@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '@/types'
 import { getInitials } from '@/lib/utils'
-import { Loader2, ChevronRight, X, AlertCircle } from 'lucide-react'
+import {
+  Loader2, ChevronRight, X, AlertCircle,
+  ArrowLeft, Train, MapPin, Clock,
+} from 'lucide-react'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 
@@ -14,6 +17,33 @@ interface ResultItem {
   turnoNumero?: string
   trenNumero?:  string
   fecha?:       string
+}
+
+interface ServicioRow {
+  id:           number
+  orden:        number
+  numero_tren:  string | null
+  origen:       string
+  destino:      string
+  hora_salida:  string
+  hora_llegada: string
+}
+
+interface Parada {
+  orden:     number
+  estacion:  string
+  hora:      string | null
+  sit_km:    number | null
+  comercial: boolean
+  apd:       boolean
+}
+
+interface LhTren {
+  numero:  string
+  tipo:    string
+  linea:   string | null
+  paradas: Parada[]
+  notas:   string | null
 }
 
 const MODES: { id: SearchMode; label: string }[] = [
@@ -28,20 +58,391 @@ const PLACEHOLDERS: Record<SearchMode, string> = {
   tren:      'Número de tren…',
 }
 
+const TIPO_LABELS: Record<string, { label: string; color: string }> = {
+  CRF_LAVIANA:     { label: 'CRF Laviana',   color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  CRF_LAVIANA_ALT: { label: 'CRF Laviana',   color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  CRF_GIJON:       { label: 'CRF Gijón',     color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  CERCANIAS:       { label: 'Cercanías',      color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
+  MD_LLANES:       { label: 'M.D. Llanes',   color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
+  VACIO:           { label: 'Material vacío', color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' },
+  OTRO:            { label: 'Tren',           color: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' },
+}
+
+// ── Vista detalle de turno ────────────────────────────────────────────────────
+
+function TurnoDetailView({ item, onBack }: { item: ResultItem; onBack: () => void }) {
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState<string | null>(null)
+  const [turno,     setTurno]     = useState<{ numero: string; tipo: string; descripcion: string | null; hora_inicio: string | null; hora_fin: string | null } | null>(null)
+  const [servicios, setServicios] = useState<ServicioRow[]>([])
+
+  const onBackRef = useRef(onBack)
+  onBackRef.current = onBack
+  useEffect(() => {
+    window.history.pushState({ detailBack: true }, '')
+    const handler = () => onBackRef.current()
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!item.fecha || !item.profile.id) { setLoading(false); return }
+    setLoading(true); setError(null)
+
+    async function load() {
+      const { data: asig, error: err } = await supabase
+        .from('asignaciones')
+        .select('turno_id, turno:turnos!asignaciones_turno_id_fkey(numero,tipo,descripcion,hora_inicio,hora_fin)')
+        .eq('maquinista_id', item.profile.id)
+        .eq('fecha', item.fecha!)
+        .single()
+
+      if (err && err.code !== 'PGRST116') { setError(err.message); setLoading(false); return }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = (asig as any)?.turno ?? null
+      setTurno(t)
+
+      if (asig?.turno_id) {
+        const { data: svcs } = await supabase
+          .from('servicios_turno')
+          .select('id,orden,numero_tren,origen,destino,hora_salida,hora_llegada')
+          .eq('turno_id', asig.turno_id)
+          .order('orden')
+        setServicios((svcs ?? []) as ServicioRow[])
+      }
+      setLoading(false)
+    }
+    load()
+  }, [item.fecha, item.profile.id])
+
+  function fmtFecha(d: string) {
+    const dt   = new Date(d + 'T00:00:00')
+    const dias  = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+    return `${dias[dt.getDay()]}, ${dt.getDate()} ${meses[dt.getMonth()]}`
+  }
+
+  return (
+    <div className="flex flex-col">
+
+      {/* Cabecera */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800
+        border-b border-gray-100 dark:border-gray-700">
+        <button
+          onClick={() => window.history.back()}
+          className="p-1.5 -ml-1 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+        </button>
+
+        {/* Avatar */}
+        <div className="w-9 h-9 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
+          flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
+          {item.profile.avatar_url
+            ? <img src={item.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+            : getInitials(item.profile.nombre, item.profile.apellidos)
+          }
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
+            {item.profile.nombre} {item.profile.apellidos}
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {item.profile.matricula}
+            {item.profile.depot ? ` · ${item.profile.depot}` : ''}
+          </p>
+        </div>
+      </div>
+
+      {/* Contenido */}
+      <div className="px-4 pt-4 pb-8 flex flex-col gap-3">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
+          </div>
+        ) : error ? (
+          <div className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400
+            px-4 py-3 rounded-2xl text-sm border border-red-100 dark:border-red-800">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : (
+          <>
+            {/* Tarjeta turno + fecha */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm divide-y divide-gray-50 dark:divide-gray-700">
+              {/* Turno número */}
+              <div className="px-4 py-3 flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-xl
+                  flex items-center justify-center shrink-0">
+                  <Train className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <p className="text-lg font-black text-gray-900 dark:text-white leading-none">
+                    T.{turno?.numero ?? item.turnoNumero ?? '—'}
+                  </p>
+                  {turno?.descripcion && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{turno.descripcion}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Fecha y horario */}
+              {item.fecha && (
+                <div className="px-4 py-3 flex items-center gap-3">
+                  <Clock className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{fmtFecha(item.fecha)}</p>
+                    {turno?.hora_inicio && turno?.hora_fin && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {turno.hora_inicio.slice(0, 5)} → {turno.hora_fin.slice(0, 5)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Servicios */}
+            {servicios.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50">
+                  <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Servicios · {servicios.length}
+                  </p>
+                </div>
+                {servicios.map(svc => (
+                  <div key={svc.id}
+                    className="px-4 py-3 border-t border-gray-50 dark:border-gray-700 first:border-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {svc.numero_tren === 'SC' || !svc.numero_tren ? 'SC' : `Tren ${svc.numero_tren}`}
+                      </span>
+                      <span className="ml-auto text-xs font-mono text-gray-500 dark:text-gray-400 tabular-nums">
+                        {svc.hora_salida.slice(0, 5)} → {svc.hora_llegada.slice(0, 5)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {svc.origen} → {svc.destino}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!turno && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700
+                p-8 text-center shadow-sm">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Sin turno asignado para este día</p>
+              </div>
+            )}
+
+            {turno && servicios.length === 0 && (
+              <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700
+                px-4 py-3 text-sm text-gray-500 dark:text-gray-400 shadow-sm">
+                No hay servicios registrados para este turno.
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Vista detalle de tren ─────────────────────────────────────────────────────
+
+function TrenDetailView({ trenNumero, onBack }: { trenNumero: string; onBack: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+  const [tren,    setTren]    = useState<LhTren | null>(null)
+
+  const onBackRef = useRef(onBack)
+  onBackRef.current = onBack
+  useEffect(() => {
+    window.history.pushState({ detailBack: true }, '')
+    const handler = () => onBackRef.current()
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [])
+
+  useEffect(() => {
+    setLoading(true); setError(null); setTren(null)
+    supabase.from('lh_trenes').select('*').eq('numero', trenNumero).single()
+      .then(({ data, error: err }) => {
+        if (err || !data) {
+          setError(err?.code === 'PGRST116'
+            ? 'No hay datos del LH-820 para este tren.'
+            : (err?.message ?? 'Error al cargar los datos del tren'))
+        } else {
+          setTren(data as LhTren)
+        }
+        setLoading(false)
+      })
+  }, [trenNumero])
+
+  const paradas = tren?.paradas.slice().sort((a, b) => a.orden - b.orden) ?? []
+  const tipoConf = tren ? (TIPO_LABELS[tren.tipo] ?? TIPO_LABELS.OTRO) : null
+
+  return (
+    <div className="flex flex-col">
+
+      {/* Cabecera */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800
+        border-b border-gray-100 dark:border-gray-700">
+        <button
+          onClick={() => window.history.back()}
+          className="p-1.5 -ml-1 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+        </button>
+        <div className="w-8 h-8 bg-red-100 dark:bg-red-900/40 rounded-xl
+          flex items-center justify-center shrink-0">
+          <Train className="w-4 h-4 text-red-600 dark:text-red-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white leading-none">
+              Tren {trenNumero}
+            </h2>
+            {tipoConf && (
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tipoConf.color}`}>
+                {tipoConf.label}
+              </span>
+            )}
+          </div>
+          {tren?.linea && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{tren.linea}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Contenido */}
+      {loading ? (
+        <div className="flex items-center justify-center py-20 gap-3">
+          <Loader2 className="w-6 h-6 text-red-500 animate-spin" />
+          <span className="text-sm text-gray-500 dark:text-gray-400">Cargando datos del tren…</span>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
+          <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+            <AlertCircle className="w-6 h-6 text-gray-400" />
+          </div>
+          <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{error}</p>
+        </div>
+      ) : paradas.length > 0 ? (
+        <div className="px-4 pt-3 pb-6">
+          {tren?.notas && (
+            <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800
+              rounded-xl px-4 py-3 mb-4 text-sm text-amber-800 dark:text-amber-200">
+              {tren.notas}
+            </div>
+          )}
+
+          {/* Cabecera columnas */}
+          <div className="flex items-center gap-1 pb-2 mb-1 border-b border-gray-100 dark:border-gray-800">
+            <div className="w-8 shrink-0" />
+            <span className="w-10 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Km</span>
+            <span className="flex-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Estación</span>
+            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0 pr-1">Hora</span>
+          </div>
+
+          {/* Línea de tiempo */}
+          <div className="relative">
+            <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-gray-100 dark:bg-gray-800" />
+
+            {paradas.map((p, idx) => {
+              const isFirst = idx === 0
+              const isLast  = idx === paradas.length - 1
+              return (
+                <div key={`${p.orden}-${p.estacion}`} className="flex items-center gap-1 py-2">
+                  <div className="relative z-10 w-8 flex justify-center shrink-0">
+                    <div className={`rounded-full border-2
+                      ${isFirst || isLast
+                        ? 'w-4 h-4 bg-red-600 border-red-600'
+                        : p.comercial
+                          ? 'w-3 h-3 bg-gray-700 dark:bg-gray-300 border-gray-700 dark:border-gray-300'
+                          : 'w-3 h-3 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600'
+                      }`}
+                    />
+                  </div>
+                  <span className="w-10 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
+                    {p.sit_km != null ? p.sit_km.toFixed(1) : ''}
+                  </span>
+                  <p className={`flex-1 text-sm leading-tight min-w-0 truncate
+                    ${isFirst || isLast
+                      ? 'font-bold text-gray-900 dark:text-white'
+                      : 'font-medium text-gray-700 dark:text-gray-300'
+                    }`}>
+                    {p.estacion}
+                    {p.apd && (
+                      <span className="ml-1.5 text-[10px] font-semibold bg-gray-100
+                        dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 py-0.5 rounded">
+                        APD
+                      </span>
+                    )}
+                  </p>
+                  {p.hora ? (
+                    <span className={`text-sm font-mono shrink-0
+                      ${isFirst || isLast
+                        ? 'font-bold text-red-600 dark:text-red-400'
+                        : 'text-gray-500 dark:text-gray-400'
+                      }`}>
+                      {p.hora}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-gray-300 dark:text-gray-600 shrink-0">—</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Footer */}
+          <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-800
+            flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+            <Clock className="w-3.5 h-3.5 shrink-0" />
+            <span>{paradas.length} paradas · LH-820 Anejo 5</span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-20 px-6 gap-3 text-center">
+          <MapPin className="w-8 h-8 text-gray-300" />
+          <p className="text-sm text-gray-400 dark:text-gray-500">
+            No se han importado paradas para este tren.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function SearchPage() {
   const navigate = useNavigate()
 
-  const [mode,    setMode]    = useState<SearchMode>('conductor')
-  const [query,   setQuery]   = useState('')
-  const [allData, setAllData] = useState<ResultItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
+  const [mode,         setMode]         = useState<SearchMode>('conductor')
+  const [query,        setQuery]        = useState('')
+  const [allData,      setAllData]      = useState<ResultItem[]>([])
+  const [loading,      setLoading]      = useState(false)
+  const [error,        setError]        = useState<string | null>(null)
+  const [selectedItem, setSelectedItem] = useState<ResultItem | null>(null)
 
-  // Cargar todos los datos cuando cambia el modo
+  function handleResultClick(r: ResultItem) {
+    if (mode === 'conductor') {
+      navigate(`/companeros/${r.profile.id}`)
+    } else {
+      setSelectedItem(r)
+    }
+  }
+
+  // Cambio de modo: limpiar selección y recargar datos
   useEffect(() => {
+    setSelectedItem(null)
     load(mode)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
   // Filtrado local en tiempo real
@@ -128,7 +529,6 @@ export default function SearchPage() {
       }
     }
 
-    // Ordenar por número de turno, luego por apellidos
     out.sort((a, b) =>
       (a.turnoNumero ?? '').localeCompare(b.turnoNumero ?? '', undefined, { numeric: true }) ||
       (a.profile.apellidos ?? '').localeCompare(b.profile.apellidos ?? '')
@@ -140,7 +540,6 @@ export default function SearchPage() {
     const hoy = new Date().toISOString().slice(0, 10)
     const fin = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
 
-    // 1. Asignaciones próximas con info del turno
     const { data: asigData, error: asigErr } = await supabase
       .from('asignaciones')
       .select(`
@@ -157,16 +556,16 @@ export default function SearchPage() {
     const turnoIds = [...new Set((asigData ?? []).map(a => a.turno_id as number))]
     if (turnoIds.length === 0) return
 
-    // 2. Servicios de esos turnos (números de tren)
     const { data: svcData, error: svcErr } = await supabase
       .from('servicios_turno')
       .select('turno_id, numero_tren')
       .in('turno_id', turnoIds)
     if (svcErr) throw svcErr
 
-    // Mapa turno_id → trenes únicos
+    // Mapa turno_id → trenes únicos (excluir nulos y SC)
     const turnoTrenes = new Map<number, Set<string>>()
     for (const s of (svcData ?? [])) {
+      if (!s.numero_tren || s.numero_tren === 'SC') continue
       if (!turnoTrenes.has(s.turno_id)) turnoTrenes.set(s.turno_id, new Set())
       turnoTrenes.get(s.turno_id)!.add(s.numero_tren)
     }
@@ -192,7 +591,6 @@ export default function SearchPage() {
       }
     }
 
-    // Ordenar por número de tren, luego por apellidos
     out.sort((a, b) =>
       (a.trenNumero ?? '').localeCompare(b.trenNumero ?? '', undefined, { numeric: true }) ||
       (a.profile.apellidos ?? '').localeCompare(b.profile.apellidos ?? '')
@@ -217,12 +615,12 @@ export default function SearchPage() {
   return (
     <div className="flex flex-col min-h-full">
 
-      {/* ── Selector de modo (estilo igual que SwapsPage) ────────── */}
+      {/* ── Selector de modo ─────────────────────────────────────── */}
       <div className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 px-4 pt-3 pb-0 flex gap-0">
         {MODES.map(m => (
           <button
             key={m.id}
-            onClick={() => { setMode(m.id); setQuery('') }}
+            onClick={() => { setMode(m.id); setQuery(''); setSelectedItem(null) }}
             className={`flex-1 py-2.5 text-sm font-semibold capitalize relative
               flex items-center justify-center
               ${mode === m.id
@@ -238,108 +636,117 @@ export default function SearchPage() {
         ))}
       </div>
 
-      {/* ── Contenido ────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 px-4 pt-4 pb-8">
+      {/* ── Vista de detalle (turno o tren) ──────────────────────── */}
+      {selectedItem && mode === 'turno' && (
+        <TurnoDetailView item={selectedItem} onBack={() => setSelectedItem(null)} />
+      )}
+      {selectedItem && mode === 'tren' && selectedItem.trenNumero && (
+        <TrenDetailView trenNumero={selectedItem.trenNumero} onBack={() => setSelectedItem(null)} />
+      )}
 
-        {/* Input de búsqueda — fontSize 16px para evitar zoom en iOS */}
-        <div className="relative">
-          <input
-            type="text"
-            inputMode={mode !== 'conductor' ? 'numeric' : 'text'}
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={PLACEHOLDERS[mode]}
-            style={{ fontSize: '16px' }}
-            className="w-full pl-4 pr-10 py-3 rounded-2xl border border-gray-200 dark:border-gray-700
-              bg-white dark:bg-gray-800 text-gray-900 dark:text-white
-              focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent
-              placeholder:text-gray-400 dark:placeholder:text-gray-600"
-          />
-          {query && (
-            <button
-              onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+      {/* ── Lista de búsqueda (oculta cuando hay selección) ──────── */}
+      {!selectedItem && (
+        <div className="flex flex-col gap-4 px-4 pt-4 pb-8">
 
-        {/* Error */}
-        {error && (
-          <div className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400
-            px-4 py-3 rounded-2xl text-sm border border-red-100 dark:border-red-800">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Cargando */}
-        {loading && (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
-          </div>
-        )}
-
-        {/* Resultados */}
-        {!loading && !error && (
-          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700
-            shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-700">
-
-            {/* Cabecera */}
-            <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50">
-              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-                {filtered.length} {countLabel}{filtered.length !== 1 ? 's' : ''}
-                {(mode === 'turno' || mode === 'tren') && ' · próximos 30 días'}
-              </p>
-            </div>
-
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center">
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {query.trim()
-                    ? 'No hay resultados para tu búsqueda'
-                    : 'No hay datos disponibles'}
-                </p>
-              </div>
-            ) : (
-              filtered.map((r, i) => (
-                <button
-                  key={`${r.profile.id}-${r.turnoNumero ?? ''}-${r.trenNumero ?? ''}-${i}`}
-                  onClick={() => navigate(`/companeros/${r.profile.id}`)}
-                  className="w-full flex items-center gap-3 px-4 py-3.5
-                    hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 transition-colors text-left"
-                >
-                  {/* Avatar */}
-                  <div className="w-10 h-10 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
-                    flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
-                    {r.profile.avatar_url
-                      ? <img src={r.profile.avatar_url} alt="" className="w-full h-full object-cover" />
-                      : getInitials(r.profile.nombre, r.profile.apellidos)
-                    }
-                  </div>
-
-                  {/* Datos */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                      {r.profile.nombre} {r.profile.apellidos}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {r.profile.matricula}
-                      {r.profile.depot    ? ` · ${r.profile.depot}`          : ''}
-                      {r.turnoNumero      ? ` · T.${r.turnoNumero}`          : ''}
-                      {r.trenNumero       ? ` · Tren ${r.trenNumero}`        : ''}
-                      {r.fecha            ? ` · ${formatFecha(r.fecha)}`     : ''}
-                    </p>
-                  </div>
-
-                  <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />
-                </button>
-              ))
+          {/* Input de búsqueda */}
+          <div className="relative">
+            <input
+              type="text"
+              inputMode={mode !== 'conductor' ? 'numeric' : 'text'}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder={PLACEHOLDERS[mode]}
+              style={{ fontSize: '16px' }}
+              className="w-full pl-4 pr-10 py-3 rounded-2xl border border-gray-200 dark:border-gray-700
+                bg-white dark:bg-gray-800 text-gray-900 dark:text-white
+                focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent
+                placeholder:text-gray-400 dark:placeholder:text-gray-600"
+            />
+            {query && (
+              <button
+                onClick={() => setQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
             )}
           </div>
-        )}
-      </div>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400
+              px-4 py-3 rounded-2xl text-sm border border-red-100 dark:border-red-800">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Cargando */}
+          {loading && (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
+            </div>
+          )}
+
+          {/* Resultados */}
+          {!loading && !error && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700
+              shadow-sm overflow-hidden divide-y divide-gray-50 dark:divide-gray-700">
+
+              <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                  {filtered.length} {countLabel}{filtered.length !== 1 ? 's' : ''}
+                  {(mode === 'turno' || mode === 'tren') && ' · próximos 30 días'}
+                </p>
+              </div>
+
+              {filtered.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {query.trim()
+                      ? 'No hay resultados para tu búsqueda'
+                      : 'No hay datos disponibles'}
+                  </p>
+                </div>
+              ) : (
+                filtered.map((r, i) => (
+                  <button
+                    key={`${r.profile.id}-${r.turnoNumero ?? ''}-${r.trenNumero ?? ''}-${i}`}
+                    onClick={() => handleResultClick(r)}
+                    className="w-full flex items-center gap-3 px-4 py-3.5
+                      hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 transition-colors text-left"
+                  >
+                    {/* Avatar */}
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-red-100 dark:bg-red-900/30
+                      flex items-center justify-center text-red-700 dark:text-red-300 font-bold text-sm shrink-0">
+                      {r.profile.avatar_url
+                        ? <img src={r.profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                        : getInitials(r.profile.nombre, r.profile.apellidos)
+                      }
+                    </div>
+
+                    {/* Datos */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                        {r.profile.nombre} {r.profile.apellidos}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {r.profile.matricula}
+                        {r.profile.depot    ? ` · ${r.profile.depot}`          : ''}
+                        {r.turnoNumero      ? ` · T.${r.turnoNumero}`          : ''}
+                        {r.trenNumero       ? ` · Tren ${r.trenNumero}`        : ''}
+                        {r.fecha            ? ` · ${formatFecha(r.fecha)}`     : ''}
+                      </p>
+                    </div>
+
+                    <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
