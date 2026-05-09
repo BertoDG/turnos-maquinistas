@@ -152,6 +152,51 @@ def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
     tramos.append({'sit_km': sit_km, 'vmax': vmax})
 
 
+# ── VMax schedule por sección ────────────────────────────────────────────────
+
+def _build_vmax_schedule(section_lines: list, window: int = 4) -> dict:
+    """
+    Construye {sit_km → vmax} usando coincidencia por proximidad de líneas.
+
+    pypdfium2 puede extraer el texto de la columna VMax en líneas separadas
+    de las del km/estación del mismo renglón visual.  Este pre-escaneo
+    empareja cada entrada VMax con el km más cercano (dentro de `window`
+    líneas) y luego propaga el valor hacia adelante para los km intermedios.
+    """
+    vmax_entries: list = []
+    km_entries:   list = []
+
+    for i, line in enumerate(section_lines):
+        v  = parse_vmax(line)
+        km = parse_sitkm(line[:15])
+        if v  is not None: vmax_entries.append((i, v))
+        if km is not None: km_entries.append((i, km))
+
+    if not vmax_entries or not km_entries:
+        return {}
+
+    # Asignación directa: cada VMax → km más cercano dentro del margen
+    direct: dict = {}
+    for vi, v in vmax_entries:
+        nearby = [(ki, km) for ki, km in km_entries if abs(ki - vi) <= window]
+        if nearby:
+            _, closest_km = min(nearby, key=lambda x: abs(x[0] - vi))
+            # Si dos VMax compiten por el mismo km, gana el más cercano
+            if closest_km not in direct or abs(vi - next(ki for ki, k in km_entries if k == closest_km)) < window:
+                direct[closest_km] = v
+
+    # Propagación hacia adelante: km sin asignación directa hereda el anterior
+    full: dict = {}
+    running = None
+    for _, km in km_entries:          # km_entries ya está en orden de documento
+        if km in direct:
+            running = direct[km]
+        if running is not None:
+            full[km] = running
+
+    return full
+
+
 # ── Extracción de texto ────────────────────────────────────────────────────────
 
 def extract_pages(pdf_path: str) -> list[str]:
@@ -219,23 +264,28 @@ def parse_page(page_text: str, trenes_map: dict, verbose: bool = False):
         if verbose:
             print(f'  Seccion {sec_num+1}: trenes={trains}')
 
+        section_lines = lines[tipo_idx + 1:section_end]
+
+        # Pre-escanear para asignar VMax a km por proximidad de línea
+        vmax_schedule = _build_vmax_schedule(section_lines)
+
         # Estado de continuación de estación (para EL BERRÓN / POLA DE SIERO)
         state: dict = {'station': None, 'sitkm': None, 'cont_rows': 0, 'vmax': None}
 
-        for line in lines[tipo_idx + 1:section_end]:
-            _process_line(line, trains, n_trains, state, trenes_map, verbose)
+        for line in section_lines:
+            _process_line(line, trains, n_trains, state, trenes_map, vmax_schedule, verbose)
 
 
 def _process_line(line: str, trains: list, n_trains: int,
-                  state: dict, trenes_map: dict, verbose: bool):
+                  state: dict, trenes_map: dict, vmax_schedule: dict, verbose: bool):
     """Procesa una línea de datos y actualiza trenes_map y state."""
     if not line.strip():
         return
     if RE_SKIP.search(line):
         return
 
-    # VMax: columna más a la izquierda, persiste hasta que cambia.
-    # Se extrae ANTES de cualquier return para no perder el valor.
+    # VMax running-state: se mantiene como fallback por si el schedule
+    # no cubre algún km (e.g., km con VMax muy lejos en el texto).
     vmax = parse_vmax(line)
     if vmax is not None:
         state['vmax'] = vmax
@@ -267,8 +317,9 @@ def _process_line(line: str, trains: list, n_trains: int,
     elif sitkm is not None:
         # Punto km sin estación → marcador intermedio de VMax en el trazado.
         # Se añade como tramo a todos los trenes de la sección.
+        tramo_vmax = vmax_schedule.get(sitkm, state.get('vmax'))
         for num in trains:
-            _add_tramo(trenes_map[num], sitkm, state.get('vmax'))
+            _add_tramo(trenes_map[num], sitkm, tramo_vmax)
         state['station'] = None
         state['sitkm'] = None
         state['cont_rows'] = 0
@@ -287,15 +338,17 @@ def _process_line(line: str, trains: list, n_trains: int,
 
     # ── Asignar tiempos a trenes (rank-based) ─────────────────────────────
     if times and active_station:
+        parada_vmax = (vmax_schedule.get(active_sitkm, state.get('vmax'))
+                       if active_sitkm is not None else state.get('vmax'))
         sorted_times = sorted(times, key=lambda x: x[1])
         for i, (hora, col) in enumerate(sorted_times[:n_trains]):
             num = trains[i]
             comercial = _is_comercial(line, hora, col)
             apd = '(APD)' in active_station
             _add_parada(trenes_map[num], active_station, hora,
-                        active_sitkm, state.get('vmax'), comercial, apd)
+                        active_sitkm, parada_vmax, comercial, apd)
             if verbose:
-                print(f'    {num} @ {active_station}: {hora} km={active_sitkm} vmax={state.get("vmax")}')
+                print(f'    {num} @ {active_station}: {hora} km={active_sitkm} vmax={parada_vmax}')
 
 
 # ── Parser principal ───────────────────────────────────────────────────────────
