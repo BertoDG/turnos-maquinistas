@@ -152,7 +152,100 @@ def _add_tramo(tren: dict, sit_km: float, vmax: Optional[int]):
     tramos.append({'sit_km': sit_km, 'vmax': vmax})
 
 
-# ── Extracción posicional VMax ────────────────────────────────────────────────
+# ── Extracción VMax por visión (Claude API) ───────────────────────────────────
+
+def extract_vmax_km_vision(pdf_path: str, pages_text: list) -> list[dict]:
+    """
+    Renderiza cada página como imagen JPEG y llama a Claude Vision para
+    extraer los pares {sit_km → vmax} de la columna VMax.
+
+    Requiere ANTHROPIC_API_KEY en el entorno y Pillow instalado.
+    Devuelve lista de dicts {sit_km (redondeado a 1 decimal): vmax} por página.
+    """
+    import pypdfium2 as pdfium
+    import anthropic
+    import base64
+    import io
+    import json
+
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        print('AVISO: ANTHROPIC_API_KEY no definida, saltando visión')
+        return [{} for _ in pages_text]
+
+    try:
+        from PIL import Image  # noqa: F401
+    except ImportError:
+        print('AVISO: Pillow no instalado (pip install Pillow), saltando visión')
+        return [{} for _ in pages_text]
+
+    doc    = pdfium.PdfDocument(pdf_path)
+    client = anthropic.Anthropic(api_key=api_key)
+    result = []
+
+    PROMPT = (
+        'Esta imagen es una página de un horario ferroviario RENFE (LH-820 Anejo 5).\n'
+        'La tabla tiene columnas: VMax | Sit Km | Dependencia | Hora...\n'
+        'Extrae ÚNICAMENTE las filas donde la columna VMax tiene un número '
+        '(ignora las filas donde esa celda está vacía).\n'
+        'Devuelve SOLO un array JSON sin texto adicional:\n'
+        '[{"sit_km": 49.7, "vmax": 70}, {"sit_km": 48.4, "vmax": 100}]\n'
+        'Si la página no contiene esta tabla devuelve [].'
+    )
+
+    for pg_idx in range(len(doc)):
+        page_text = pages_text[pg_idx] if pg_idx < len(pages_text) else ''
+        if not RE_TREN.search(page_text):
+            result.append({})
+            continue
+
+        page   = doc[pg_idx]
+        bitmap = page.render(scale=2.0)
+        pil_img = bitmap.to_pil()
+
+        buf = io.BytesIO()
+        pil_img.save(buf, format='JPEG', quality=82)
+        img_b64 = base64.standard_b64encode(buf.getvalue()).decode()
+
+        try:
+            msg = client.messages.create(
+                model='claude-haiku-4-5-20251001',
+                max_tokens=2048,
+                messages=[{
+                    'role': 'user',
+                    'content': [
+                        {
+                            'type': 'image',
+                            'source': {
+                                'type': 'base64',
+                                'media_type': 'image/jpeg',
+                                'data': img_b64,
+                            },
+                        },
+                        {'type': 'text', 'text': PROMPT},
+                    ],
+                }],
+            )
+            raw = msg.content[0].text.strip()
+            # Extraer el JSON aunque venga envuelto en markdown
+            json_match = re.search(r'\[.*\]', raw, re.DOTALL)
+            pairs = json.loads(json_match.group(0)) if json_match else []
+            page_map = {
+                round(float(p['sit_km']), 1): int(p['vmax'])
+                for p in pairs
+                if 'sit_km' in p and 'vmax' in p
+            }
+        except Exception as e:
+            print(f'  Pagina {pg_idx + 1}: error visión ({e})')
+            page_map = {}
+
+        result.append(page_map)
+        print(f'  Pag {pg_idx + 1}: {len(page_map)} pares vmax-km')
+
+    return result
+
+
+# ── Extracción posicional VMax (fallback) ─────────────────────────────────────
 
 def extract_all_vmax_km(pdf_path: str) -> list[dict]:
     """
@@ -419,8 +512,12 @@ def parse_lh820(pdf_path: str, verbose: bool = False) -> list[dict]:
     pages = extract_pages(pdf_path)
     print(f'Paginas: {len(pages)}')
 
-    print('Extrayendo posiciones VMax...')
-    vmax_pages = extract_all_vmax_km(pdf_path)
+    if os.environ.get('ANTHROPIC_API_KEY'):
+        print('Extrayendo VMax por visión (Claude)...')
+        vmax_pages = extract_vmax_km_vision(pdf_path, pages)
+    else:
+        print('Extrayendo VMax por posición de caracteres...')
+        vmax_pages = extract_all_vmax_km(pdf_path)
 
     trenes_map: dict[str, dict] = {}
 
