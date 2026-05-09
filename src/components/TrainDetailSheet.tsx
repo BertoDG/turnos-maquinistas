@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, Train, MapPin, Clock, Loader2, AlertCircle, Gauge } from 'lucide-react'
+import { ArrowLeft, Train, MapPin, Clock, Loader2, AlertCircle } from 'lucide-react'
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -9,14 +9,8 @@ interface Parada {
   estacion:  string
   hora:      string | null
   sit_km:    number | null
-  vmax:      number | null
   comercial: boolean
   apd:       boolean
-}
-
-interface Tramo {
-  sit_km: number
-  vmax:   number | null
 }
 
 interface LhTren {
@@ -25,14 +19,11 @@ interface LhTren {
   sentido:       string | null
   linea:         string | null
   paradas:       Parada[]
-  tramos:        Tramo[]
   vigente_desde: string | null
   notas:         string | null
 }
 
-type PuntoDisplay =
-  | (Parada & { _tipo: 'parada' })
-  | (Tramo  & { _tipo: 'tramo'; orden: number })
+type PuntoDisplay = Parada & { _tipo: 'parada' }
 
 // ── Labels por tipo ───────────────────────────────────────────────────────────
 
@@ -90,31 +81,10 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
   const puntosDisplay = useMemo((): PuntoDisplay[] => {
     if (!tren) return []
 
-    const paradas: PuntoDisplay[] = tren.paradas
+    return tren.paradas
       .slice()
       .sort((a, b) => a.orden - b.orden)
       .map(p => ({ ...p, _tipo: 'parada' as const }))
-
-    const tramos: PuntoDisplay[] = (tren.tramos ?? []).map((t, i) => ({
-      ...t, _tipo: 'tramo' as const, orden: i,
-    }))
-
-    if (paradas.length === 0) return paradas
-
-    const kms = paradas.map(p => (p as Parada).sit_km).filter((k): k is number => k != null)
-    const kmDescending = kms.length >= 2 && kms[0] > kms[kms.length - 1]
-
-    const all = [...paradas, ...tramos]
-    all.sort((a, b) => {
-      const ka = 'sit_km' in a ? a.sit_km : null
-      const kb = 'sit_km' in b ? b.sit_km : null
-      if (ka == null && kb == null) return 0
-      if (ka == null) return 1
-      if (kb == null) return -1
-      return kmDescending ? kb - ka : ka - kb
-    })
-
-    return all
   }, [tren])
 
   const tipoConf = tren ? (TIPO_LABELS[tren.tipo] ?? TIPO_LABELS.OTRO) : null
@@ -181,7 +151,6 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
             <div className="flex items-center gap-1 pb-2 mb-1 border-b border-gray-100 dark:border-gray-800">
               <div className="w-8 shrink-0" />
               <span className="w-10 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Km</span>
-              <span className="w-11 text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">V.Máx</span>
               <span className="flex-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Estación</span>
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0 pr-1">Hora</span>
             </div>
@@ -190,37 +159,9 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
             <div className="relative">
               <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-gray-100 dark:bg-gray-800" />
 
-              {puntosDisplay.map((punto) => {
-                if (punto._tipo === 'tramo') {
-                  return (
-                    <div key={`tramo-${punto.sit_km}`}
-                      className="flex items-center gap-1 py-1">
-                      <div className="relative z-10 w-8 flex justify-center shrink-0">
-                        <div className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
-                      </div>
-                      <span className="w-10 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
-                        {punto.sit_km.toFixed(1)}
-                      </span>
-                      <div className="w-11 shrink-0">
-                        {punto.vmax != null && (
-                          <span className="text-[10px] font-semibold text-blue-500 dark:text-blue-400
-                            bg-blue-50 dark:bg-blue-900/30 px-1 py-0.5 rounded
-                            inline-flex items-center gap-0.5">
-                            <Gauge className="w-2.5 h-2.5" />
-                            {punto.vmax}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex-1" />
-                    </div>
-                  )
-                }
-
-                const p = punto as Parada & { _tipo: 'parada' }
-                const soloParadas = puntosDisplay.filter(x => x._tipo === 'parada')
-                const paradaIdx   = soloParadas.indexOf(punto)
-                const isFirst     = paradaIdx === 0
-                const isLast      = paradaIdx === soloParadas.length - 1
+              {puntosDisplay.map((p, idx) => {
+                const isFirst = idx === 0
+                const isLast  = idx === puntosDisplay.length - 1
 
                 return (
                   <div key={`${p.orden}-${p.estacion}`}
@@ -242,18 +183,6 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
                     <span className="w-10 text-[10px] text-gray-400 dark:text-gray-500 tabular-nums shrink-0">
                       {p.sit_km != null ? p.sit_km.toFixed(1) : ''}
                     </span>
-
-                    {/* VMax */}
-                    <div className="w-11 shrink-0">
-                      {p.vmax != null && (
-                        <span className="text-[10px] font-semibold text-blue-500 dark:text-blue-400
-                          bg-blue-50 dark:bg-blue-900/30 px-1 py-0.5 rounded
-                          inline-flex items-center gap-0.5">
-                          <Gauge className="w-2.5 h-2.5" />
-                          {p.vmax}
-                        </span>
-                      )}
-                    </div>
 
                     {/* Estación */}
                     <p className={`flex-1 text-sm leading-tight min-w-0 truncate
@@ -302,11 +231,7 @@ export default function TrainDetailSheet({ numeroTren, onClose }: Props) {
         <div className="flex-shrink-0 px-4 py-3 border-t border-gray-100 dark:border-gray-800
           flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
           <Clock className="w-3.5 h-3.5 shrink-0" />
-          <span>
-            {tren.paradas.length} paradas
-            {tren.tramos?.length > 0 && ` · ${tren.tramos.length} puntos km`}
-            {' · LH-820 Anejo 5'}
-          </span>
+          <span>{tren.paradas.length} paradas · LH-820 Anejo 5</span>
         </div>
       )}
     </div>
