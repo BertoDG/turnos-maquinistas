@@ -10,7 +10,7 @@ import { getTurnoMeta } from '@/lib/turnoNomenclatura'
 import {
   LogOut, Train, User, Shield, ChevronRight,
   Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Palette, RotateCcw, Trash2, Pencil, Check, Camera,
-  Sun, Moon, Monitor, KeyRound, Eye, EyeOff,
+  Sun, Moon, Monitor, KeyRound, Eye, EyeOff, Mail,
 } from 'lucide-react'
 import type { ThemePreference } from '@/lib/colorPrefs'
 
@@ -25,7 +25,7 @@ interface UploadState {
 
 // ══════════════════════════════════════════════════════════════
 export default function ProfilePage() {
-  const { profile, signOut, isAdmin, refreshProfile, changePassword } = useAuth()
+  const { user, profile, signOut, isAdmin, refreshProfile, changePassword } = useAuth()
   const isSuperadmin = profile?.role === 'superadmin'
 
   const [file, setFile] = useState<File | null>(null)
@@ -501,6 +501,9 @@ export default function ProfilePage() {
               : profile.role === 'admin'    ? 'Administrador'
               : 'Maquinista'
             } />
+            {user?.email && (
+              <InfoRow icon={Mail} label="Email" value={user.email} />
+            )}
             {profile.telefono && (
               <InfoRow icon={User} label="Teléfono" value={profile.telefono} />
             )}
