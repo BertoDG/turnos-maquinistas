@@ -24,6 +24,7 @@ interface AuthContextType {
   signUp: (data: RegisterData) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
+  changePassword: (newPassword: string) => Promise<{ error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -202,12 +203,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) await loadProfile(user.id)
   }
 
+  async function changePassword(newPassword: string): Promise<{ error: string | null }> {
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword })
+      if (error) return { error: error.message }
+      return { error: null }
+    } catch {
+      return { error: 'Error de conexión. Comprueba tu red e inténtalo de nuevo.' }
+    }
+  }
+
   const isAdmin  = profile?.role === 'admin' || profile?.role === 'superadmin'
   const isActive = profile?.activo ?? false
 
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, loading, isAdmin, isActive, signIn, signUp, signOut, refreshProfile }}
+      value={{ user, session, profile, loading, isAdmin, isActive, signIn, signUp, signOut, refreshProfile, changePassword }}
     >
       {children}
     </AuthContext.Provider>

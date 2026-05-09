@@ -10,7 +10,7 @@ import { getTurnoMeta } from '@/lib/turnoNomenclatura'
 import {
   LogOut, Train, User, Shield, ChevronRight,
   Upload, FileText, X, CheckCircle, AlertCircle, Loader2, Palette, RotateCcw, Trash2, Pencil, Check, Camera,
-  Sun, Moon, Monitor,
+  Sun, Moon, Monitor, KeyRound, Eye, EyeOff,
 } from 'lucide-react'
 import type { ThemePreference } from '@/lib/colorPrefs'
 
@@ -25,7 +25,8 @@ interface UploadState {
 
 // ══════════════════════════════════════════════════════════════
 export default function ProfilePage() {
-  const { profile, signOut, isAdmin, refreshProfile } = useAuth()
+  const { profile, signOut, isAdmin, refreshProfile, changePassword } = useAuth()
+  const isSuperadmin = profile?.role === 'superadmin'
 
   const [file, setFile] = useState<File | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -130,28 +131,61 @@ export default function ProfilePage() {
   }
 
   async function handleEditSave() {
-    if (!editForm.nombre.trim() || !editForm.apellidos.trim() || !editForm.matricula.trim()) {
-      setEditError('Nombre, apellidos y matrícula son obligatorios.')
+    if (!editForm.nombre.trim() || !editForm.apellidos.trim()) {
+      setEditError('Nombre y apellidos son obligatorios.')
+      return
+    }
+    if (isSuperadmin && !editForm.matricula.trim()) {
+      setEditError('La matrícula es obligatoria.')
       return
     }
     setEditSaving(true)
     setEditError(null)
+    const updates: Record<string, string | null> = {
+      nombre:     editForm.nombre.trim(),
+      apellidos:  editForm.apellidos.trim(),
+      depot:      editForm.depot.trim()    || null,
+      telefono:   editForm.telefono.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+    if (isSuperadmin) updates.matricula = editForm.matricula.trim()
     const { error } = await supabase
       .from('profiles')
-      .update({
-        nombre:    editForm.nombre.trim(),
-        apellidos: editForm.apellidos.trim(),
-        matricula: editForm.matricula.trim(),
-        depot:     editForm.depot.trim()    || null,
-        telefono:  editForm.telefono.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updates)
       .eq('id', profile!.id)
     setEditSaving(false)
     if (error) { setEditError(error.message); return }
     setEditSaved(true)
     await refreshProfile()
     setTimeout(() => { setEditingProfile(false); setEditSaved(false) }, 800)
+  }
+
+  // ── Cambio de contraseña ─────────────────────────────────────
+  const [showPassForm,  setShowPassForm]  = useState(false)
+  const [passForm,      setPassForm]      = useState({ nueva: '', confirmar: '' })
+  const [passSaving,    setPassSaving]    = useState(false)
+  const [passError,     setPassError]     = useState<string | null>(null)
+  const [passSaved,     setPassSaved]     = useState(false)
+  const [showNewPass,   setShowNewPass]   = useState(false)
+  const [showConfPass,  setShowConfPass]  = useState(false)
+
+  async function handleChangePassword() {
+    if (passForm.nueva.length < 6) {
+      setPassError('La contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    if (passForm.nueva !== passForm.confirmar) {
+      setPassError('Las contraseñas no coinciden.')
+      return
+    }
+    setPassSaving(true)
+    setPassError(null)
+    const { error } = await changePassword(passForm.nueva)
+    setPassSaving(false)
+    if (error) { setPassError(error); return }
+    setPassSaved(true)
+    setPassForm({ nueva: '', confirmar: '' })
+    setTimeout(() => { setShowPassForm(false); setPassSaved(false) }, 1200)
   }
 
   // ── Eliminar cuenta ──────────────────────────────────────────
@@ -405,14 +439,20 @@ export default function ProfilePage() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs font-medium text-gray-600 block mb-1">Matrícula <span className="text-red-500">*</span></label>
-                <input
-                  value={editForm.matricula}
-                  onChange={e => setEditForm(f => ({ ...f, matricula: e.target.value }))}
-                  className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
-                    focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
-                  placeholder="Ej: 87654"
-                />
+                <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">Matrícula</label>
+                {isSuperadmin ? (
+                  <input
+                    value={editForm.matricula}
+                    onChange={e => setEditForm(f => ({ ...f, matricula: e.target.value }))}
+                    className="w-full px-3 py-2.5 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white
+                      focus:outline-none focus:ring-2 focus:ring-red-400 placeholder:text-gray-400 dark:placeholder:text-gray-500"
+                    placeholder="Ej: 87654"
+                  />
+                ) : (
+                  <div className="w-full px-3 py-2.5 text-sm bg-gray-100 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-500 dark:text-gray-400 select-none">
+                    {editForm.matricula}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 block mb-1">Depósito</label>
@@ -464,6 +504,86 @@ export default function ProfilePage() {
             {profile.telefono && (
               <InfoRow icon={User} label="Teléfono" value={profile.telefono} />
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Cambiar contraseña ──────────────────────────────── */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <KeyRound className="w-4 h-4 text-gray-400" />
+            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">Contraseña</h3>
+          </div>
+          {!showPassForm && (
+            <button
+              onClick={() => { setShowPassForm(true); setPassError(null); setPassForm({ nueva: '', confirmar: '' }) }}
+              className="text-xs font-semibold text-red-600 hover:text-red-700 transition-colors"
+            >
+              Cambiar
+            </button>
+          )}
+        </div>
+
+        {showPassForm && (
+          <div className="flex flex-col gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">Nueva contraseña</label>
+              <div className="relative">
+                <input
+                  type={showNewPass ? 'text' : 'password'}
+                  value={passForm.nueva}
+                  onChange={e => setPassForm(f => ({ ...f, nueva: e.target.value }))}
+                  className="w-full px-3 py-2.5 pr-10 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-400"
+                  placeholder="Mínimo 6 caracteres"
+                  disabled={passSaving}
+                />
+                <button type="button" onClick={() => setShowNewPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showNewPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 block mb-1">Confirmar contraseña</label>
+              <div className="relative">
+                <input
+                  type={showConfPass ? 'text' : 'password'}
+                  value={passForm.confirmar}
+                  onChange={e => setPassForm(f => ({ ...f, confirmar: e.target.value }))}
+                  className="w-full px-3 py-2.5 pr-10 text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-400"
+                  placeholder="Repite la contraseña"
+                  disabled={passSaving}
+                />
+                <button type="button" onClick={() => setShowConfPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showConfPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            {passError && (
+              <p className="text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />{passError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowPassForm(false)}
+                disabled={passSaving}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleChangePassword}
+                disabled={passSaving || passSaved}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {passSaving  ? <><Loader2 className="w-4 h-4 animate-spin" />Guardando...</>
+                : passSaved  ? <><Check className="w-4 h-4" />Guardado</>
+                :               'Guardar'}
+              </button>
+            </div>
           </div>
         )}
       </div>
