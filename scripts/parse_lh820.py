@@ -197,17 +197,92 @@ def _build_vmax_schedule(section_lines: list, window: int = 4) -> dict:
     return full
 
 
-# ── Extracción de texto ────────────────────────────────────────────────────────
+# ── Extracción de texto con posición visual ───────────────────────────────────
 
 def extract_pages(pdf_path: str) -> list[str]:
-    """Devuelve la lista de textos de cada página del PDF usando pypdfium2."""
+    """
+    Extrae texto de cada página respetando el orden visual izquierda→derecha,
+    arriba→abajo, usando las coordenadas bbox de cada carácter.
+
+    pypdfium2 devuelve caracteres en orden interno del PDF, que para tablas
+    multi-columna es diferente al orden visual: la columna VMax (izquierda)
+    puede aparecer en el flujo de texto DESPUÉS de la columna Sit Km.
+    Reagrupar por fila Y y ordenar cada fila por X corrige esto.
+    """
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(pdf_path)
+
+    doc   = pdfium.PdfDocument(pdf_path)
     pages = []
+
+    ROW_TOL = 4    # tolerancia vertical (puntos PDF) para mismo renglón
+    GAP_FAC = 0.4  # fracción de altura de carácter para insertar espacio
+
     for pg_idx in range(len(doc)):
-        page = doc[pg_idx]
+        page     = doc[pg_idx]
         textpage = page.get_textpage()
-        pages.append(textpage.get_text_range())
+        n        = textpage.count_chars()
+
+        if n == 0:
+            pages.append('')
+            continue
+
+        # Recopilar (ch, left, bottom, right, top) para cada carácter
+        chars = []
+        for i in range(n):
+            box = textpage.get_charbox(i)   # (left, bottom, right, top)
+            ch  = textpage.get_text_range(i, 1)
+            if ch in ('\r', '\n'):
+                continue
+            chars.append((ch, box[0], box[1], box[2], box[3]))
+
+        if not chars:
+            pages.append('')
+            continue
+
+        # Ordenar de arriba a abajo (top desc, ya que Y=0 es la base del PDF)
+        chars.sort(key=lambda c: -c[4])
+
+        # Agrupar en filas: caracteres con top similar forman el mismo renglón
+        rows: list = []
+        cur_row: list = []
+        row_y = None
+
+        for c in chars:
+            y_top = c[4]
+            if row_y is None or abs(y_top - row_y) <= ROW_TOL:
+                cur_row.append(c)
+                if row_y is None:
+                    row_y = y_top
+            else:
+                rows.append(cur_row)
+                cur_row = [c]
+                row_y   = y_top
+
+        if cur_row:
+            rows.append(cur_row)
+
+        # Ordenar cada fila por X (izquierda→derecha) e insertar espacios
+        text_lines = []
+        for row in rows:
+            row.sort(key=lambda c: c[1])   # por coordenada left
+            parts = []
+            prev_right = None
+
+            for ch, left, bottom, right, top in row:
+                if prev_right is not None:
+                    gap    = left - prev_right
+                    height = (top - bottom) if top > bottom else 8.0
+                    if gap > height * GAP_FAC:
+                        parts.append(' ')
+                parts.append(ch)
+                prev_right = right
+
+            line = ''.join(parts).strip()
+            if line:
+                text_lines.append(line)
+
+        pages.append('\n'.join(text_lines))
+
     return pages
 
 
