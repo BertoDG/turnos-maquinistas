@@ -71,10 +71,11 @@ const TIPO_LABELS: Record<string, { label: string; color: string }> = {
 // ── Vista detalle de turno ────────────────────────────────────────────────────
 
 function TurnoDetailView({ item, onBack }: { item: ResultItem; onBack: () => void }) {
-  const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
-  const [turno,     setTurno]     = useState<{ numero: string; tipo: string; descripcion: string | null; hora_inicio: string | null; hora_fin: string | null } | null>(null)
-  const [servicios, setServicios] = useState<ServicioRow[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
+  const [turno,        setTurno]        = useState<{ numero: string; tipo: string; descripcion: string | null; hora_inicio: string | null; hora_fin: string | null } | null>(null)
+  const [servicios,    setServicios]    = useState<ServicioRow[]>([])
+  const [selectedTren, setSelectedTren] = useState<string | null>(null)
 
   const onBackRef = useRef(onBack)
   onBackRef.current = onBack
@@ -115,6 +116,11 @@ function TurnoDetailView({ item, onBack }: { item: ResultItem; onBack: () => voi
     }
     load()
   }, [item.fecha, item.profile.id])
+
+  // Early return DESPUÉS de todos los hooks
+  if (selectedTren) {
+    return <TrenDetailView trenNumero={selectedTren} onBack={() => setSelectedTren(null)} />
+  }
 
   function fmtFecha(d: string) {
     const dt   = new Date(d + 'T00:00:00')
@@ -212,22 +218,40 @@ function TurnoDetailView({ item, onBack }: { item: ResultItem; onBack: () => voi
                     Servicios · {servicios.length}
                   </p>
                 </div>
-                {servicios.map(svc => (
-                  <div key={svc.id}
-                    className="px-4 py-3 border-t border-gray-50 dark:border-gray-700 first:border-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {svc.numero_tren === 'SC' || !svc.numero_tren ? 'SC' : `Tren ${svc.numero_tren}`}
-                      </span>
-                      <span className="ml-auto text-xs font-mono text-gray-500 dark:text-gray-400 tabular-nums">
-                        {svc.hora_salida.slice(0, 5)} → {svc.hora_llegada.slice(0, 5)}
-                      </span>
+                {servicios.map(svc => {
+                  const isTren = !!svc.numero_tren && svc.numero_tren !== 'SC'
+                  const inner = (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {isTren ? `Tren ${svc.numero_tren}` : 'SC'}
+                        </span>
+                        <span className="ml-auto text-xs font-mono text-gray-500 dark:text-gray-400 tabular-nums">
+                          {svc.hora_salida.slice(0, 5)} → {svc.hora_llegada.slice(0, 5)}
+                        </span>
+                        {isTren && <ChevronRight className="w-4 h-4 text-gray-300 dark:text-gray-600 shrink-0" />}
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        {svc.origen} → {svc.destino}
+                      </p>
+                    </>
+                  )
+                  return isTren ? (
+                    <button
+                      key={svc.id}
+                      onClick={() => setSelectedTren(svc.numero_tren!)}
+                      className="w-full text-left px-4 py-3 border-t border-gray-50 dark:border-gray-700 first:border-0
+                        hover:bg-gray-50 dark:hover:bg-gray-700/50 active:bg-gray-100 transition-colors"
+                    >
+                      {inner}
+                    </button>
+                  ) : (
+                    <div key={svc.id}
+                      className="px-4 py-3 border-t border-gray-50 dark:border-gray-700 first:border-0">
+                      {inner}
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                      {svc.origen} → {svc.destino}
-                    </p>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
