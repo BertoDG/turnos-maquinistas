@@ -2,21 +2,12 @@ import { useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCalendar } from '@/hooks/useCalendar'
-import { useMainScroll } from '@/components/layout/Layout'
 import MonthCalendar from '@/components/calendar/MonthCalendar'
 import { Loader2, AlertCircle, CalendarDays } from 'lucide-react'
-
-/** Posición scrollTop que deja `el` al inicio del área visible de `container` */
-function topOf(el: HTMLElement, container: HTMLElement): number {
-  return el.getBoundingClientRect().top
-    - container.getBoundingClientRect().top
-    + container.scrollTop
-}
 
 export default function CalendarPage() {
   const { profile }      = useAuth()
   const { maquinistaId } = useParams()
-  const scrollRef        = useMainScroll()
 
   const targetId = maquinistaId || profile?.id
 
@@ -45,25 +36,18 @@ export default function CalendarPage() {
   // Scroll al mes actual solo la primera vez que los datos están listos
   useEffect(() => {
     if (loading || scrolledRef.current || months.length === 0) return
-
-    const container = scrollRef?.current
-    if (!container) return
-
     const key = `${now.getFullYear()}-${now.getMonth()}`
     const el  = monthRefs.current.get(key)
     if (!el) return
-
-    container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
     scrolledRef.current = true
-  }, [loading, months.length, scrollRef])
+  }, [loading, months.length])
 
   function scrollToToday() {
-    const container = scrollRef?.current
-    if (!container) return
     const key = `${now.getFullYear()}-${now.getMonth()}`
     const el  = monthRefs.current.get(key)
     if (!el) return
-    container.scrollTo({ top: topOf(el, container), behavior: 'smooth' })
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   if (loading) {

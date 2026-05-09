@@ -128,7 +128,9 @@ export default function TopBar() {
     if (isDayDetail) {
       navigate('/', { replace: true })
     } else if (isCompaneroCalendar) {
-      navigate(-1)
+      const state = location.state as { from?: string } | null
+      if (state?.from) navigate(state.from)
+      else navigate(-1)
     } else {
       navigate(-1)
     }

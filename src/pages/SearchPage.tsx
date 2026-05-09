@@ -456,7 +456,7 @@ export default function SearchPage() {
 
   function handleResultClick(r: ResultItem) {
     if (mode === 'conductor') {
-      navigate(`/companeros/${r.profile.id}`)
+      navigate(`/companeros/${r.profile.id}`, { state: { from: '/buscar' } })
     } else {
       setSelectedItem(r)
     }
