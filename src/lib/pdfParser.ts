@@ -8,6 +8,7 @@
 
 import * as pdfjsLib from 'pdfjs-dist'
 import { getTurnoMeta } from './turnoNomenclatura'
+import type { TurnoTipo } from '@/types'
 
 // Configurar el worker de pdf.js (se resuelve con Vite)
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -21,7 +22,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
 
 export interface ParsedTurno {
   numero: string
-  tipo: 'servicio' | 'descanso' | 'descanso_doble' | 'vacaciones' | 'especial' | 'guardia'
+  tipo: TurnoTipo
   descripcion: string
   color_hex: string
   text_color_hex: string
@@ -353,7 +354,7 @@ function parseServicioLineFlexible(line: string, orden: number): ParsedServicio 
   }
 
   // Debe terminar con número de tren (4-6 dígitos, opcionalmente prefijado con V)
-  const trainMatch = stripped.match(/(V?\d{4,6})\s*$/)
+  const trainMatch = stripped.match(/V?(\d{4,6})\s*$/)
   if (!trainMatch) return null
   const numero_tren = trainMatch[1]
 
@@ -754,7 +755,7 @@ export async function parseLH820(file: File): Promise<LH820Tren[]> {
     }
 
     // ── Detectar si hay dos tablas (superior e inferior) ─────────────────────
-    const trenRows = rows.filter((row, ri) => row.some(c => TREN_SCAN_RE.test(c.text)))
+    const trenRows = rows.filter(row => row.some(c => TREN_SCAN_RE.test(c.text)))
     if (trenRows.length >= 2) {
       // Dos tablas: procesar por separado usando Y real de los items
       const trenYs = trenRows.map(row => row.find(c => TREN_SCAN_RE.test(c.text))!.col)  // col es Y
