@@ -54,6 +54,7 @@ export default function DayDetailPage() {
 
   const maquinistaId = searchParams.get('maquinistaId') || profile?.id
   const isOwnCalendar = !searchParams.get('maquinistaId') || searchParams.get('maquinistaId') === profile?.id
+  const mockNow = searchParams.get('mockNow')
 
   const [data, setData] = useState<DayData>({ asignacion: null, servicios: [] })
   const [loading, setLoading] = useState(true)
@@ -397,8 +398,8 @@ export default function DayDetailPage() {
                 </div>
               )}
 
-              {/* ── Progreso del turno (solo hoy, tras los servicios) ── */}
-              {isToday && !isRest && !isEspecial && !isGuardia && !guardiaVirtual
+              {/* ── Progreso del turno (solo hoy, o con mockNow para testing) ── */}
+              {(isToday || !!mockNow) && !isRest && !isEspecial && !isGuardia && !guardiaVirtual
                 && turno?.hora_inicio && turno?.hora_fin && data.servicios.length > 0 && (
                 <ShiftProgress
                   horaInicio={turno.hora_inicio}
@@ -406,6 +407,7 @@ export default function DayDetailPage() {
                   servicios={data.servicios}
                   accentColor={bg}
                   nombreEstacion={nombreEstacion}
+                  mockNow={mockNow ?? undefined}
                 />
               )}
 
@@ -730,25 +732,31 @@ function ShiftProgress({
   servicios,
   accentColor,
   nombreEstacion,
+  mockNow,
 }: {
   horaInicio: string
   horaFin: string
   servicios: ServicioTurno[]
   accentColor: string
   nombreEstacion: (code: string) => string
+  mockNow?: string
 }) {
+  const mockMin = mockNow ? toMin(mockNow) : null
+
   const [nowMin, setNowMin] = useState(() => {
+    if (mockMin !== null) return mockMin
     const n = new Date()
     return n.getHours() * 60 + n.getMinutes()
   })
 
   useEffect(() => {
+    if (mockMin !== null) { setNowMin(mockMin); return }
     const id = setInterval(() => {
       const n = new Date()
       setNowMin(n.getHours() * 60 + n.getMinutes())
     }, 30_000)
     return () => clearInterval(id)
-  }, [])
+  }, [mockMin])
 
   // Paradas de lh_trenes para los trenes del turno
   const [paradasMap, setParadasMap] = useState<Record<string, ParadaLh[]>>({})
