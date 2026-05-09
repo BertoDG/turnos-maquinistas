@@ -91,12 +91,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'INITIAL_SESSION') return
       if (cancelled) return
 
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      if (event === 'SIGNED_OUT' || (event as string) === 'USER_DELETED') {
         setSession(null); setUser(null); setProfile(null)
         return
       }
 
-      if (event === 'TOKEN_REFRESH_FAILED') {
+      if ((event as string) === 'TOKEN_REFRESH_FAILED') {
         console.warn('[Auth] Token refresh fallido, cerrando sesión')
         await supabase.auth.signOut()
         setSession(null); setUser(null); setProfile(null)
@@ -125,9 +125,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   async function signIn(emailOrMatricula: string, password: string): Promise<{ error: string | null }> {
     try {
-      const email = emailOrMatricula.includes('@')
-        ? emailOrMatricula.trim()
-        : `${emailOrMatricula.trim().toLowerCase()}@turnosmaq.app`
+      let email: string
+      if (emailOrMatricula.includes('@')) {
+        email = emailOrMatricula.trim().toLowerCase()
+      } else {
+        const matricula = emailOrMatricula.trim().toLowerCase()
+        const { data } = await supabase.rpc('get_email_by_matricula', { p_matricula: matricula })
+        email = data ?? `${matricula}@turnosmaq.app`
+      }
 
       const { error } = await supabase.auth.signInWithPassword({ email, password })
 
